@@ -1,6 +1,6 @@
 {
-    "name": "hello",
-    "short_name": "hello",
+    "name": "enigma",
+    "short_name": "enigma",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
