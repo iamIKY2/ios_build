@@ -1,172 +1,433 @@
 import 'package:flutter/material.dart';
-
-class AppColors {
-  // Primary brand
-  static const Color primary = Color(0xFF6366F1); // Indigo
-  static const Color primaryLight = Color(0xFF818CF8);
-  static const Color primaryDark = Color(0xFF4338CA);
-
-  // Secondary / Accent
-  static const Color secondary = Color(0xFF06B6D4); // Cyan
-  static const Color accent = Color(0xFFEC4899); // Pink
-
-  // Status colors
-  static const Color income = Color(0xFF10B981); // Emerald Green
-  static const Color incomeLight = Color(0xFFD1FAE5);
-  static const Color expense = Color(0xFFF43F5E); // Rose
-  static const Color expenseLight = Color(0xFFFFE4E6);
-  static const Color warning = Color(0xFFF59E0B); // Amber
-
-  // Dark palette
-  static const Color darkBg = Color(0xFF0A0E17);
-  static const Color darkSurface = Color(0xFF131A29);
-  static const Color darkCard = Color(0xFF1B2438);
-  static const Color darkCardElevated = Color(0xFF232E47);
-  static const Color darkBorder = Color(0xFF26324D);
-  static const Color darkTextPrimary = Color(0xFFF8FAFC);
-  static const Color darkTextSecondary = Color(0xFF94A3B8);
-  static const Color darkTextMuted = Color(0xFF64748B);
-
-  // Light palette
-  static const Color lightBg = Color(0xFFF8FAFC);
-  static const Color lightSurface = Color(0xFFFFFFFF);
-  static const Color lightCard = Color(0xFFFFFFFF);
-  static const Color lightCardElevated = Color(0xFFF1F5F9);
-  static const Color lightBorder = Color(0xFFE2E8F0);
-  static const Color lightTextPrimary = Color(0xFF0F172A);
-  static const Color lightTextSecondary = Color(0xFF475569);
-  static const Color lightTextMuted = Color(0xFF94A3B8);
-
-  // Gradients
-  static const LinearGradient cardGradient1 = LinearGradient(
-    colors: [Color(0xFF4F46E5), Color(0xFF7C3AED)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
-
-  static const LinearGradient cardGradient2 = LinearGradient(
-    colors: [Color(0xFF059669), Color(0xFF0D9488)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
-
-  static const LinearGradient darkCardGradient = LinearGradient(
-    colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
-
-  static const LinearGradient primaryGradient = LinearGradient(
-    colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
-}
+import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  static ThemeData get darkTheme {
+  // Brand & Palette Colors (Modern Vibrant & Harmonious)
+  static const Color primary = Color(0xFFDA6556);       // Terracotta / Warm Coral
+  static const Color primaryLight = Color(0xFFE88A7D);  // Soft Coral
+  static const Color primaryDark = Color(0xFFB8483B);   // Deep Terracotta
+  static const Color secondary = Color(0xFF8ACFF8);     // Sky Blue / Pastel Blue
+  static const Color accentMint = Color(0xFFB8CFB3);    // Sage Green / Soft Herbal
+  static const Color accentAmber = Color(0xFFDB9558);   // Warm Amber / Apricot
+  static const Color accentCoral = Color(0xFFDA6556);   // Terracotta / Coral
+  static const Color accentPurple = Color(0xFF9D84B7);  // Soft Muted Lavender
+  static const Color accentSky = Color(0xFF8ACFF8);     // Pastel Sky Blue
+
+  // ── Dark Mode Backgrounds & Surfaces ─────────────────────────────────────
+  static const Color bgDark = Color(0xFF090D16);         // Deep Midnight Obsidian
+  static const Color bgSurface = Color(0xFF111726);      // Premium Card Surface
+  static const Color bgSurfaceLight = Color(0xFF1C2438); // Elevated Surface / Chips
+  static const Color cardBorder = Color(0x1AFFFFFF);     // 10% white border
+  static const Color cardBorderStrong = Color(0x33FFFFFF);// 20% white border for active
+
+  // ── Dark Mode Text Colors ──────────────────────────────────────────────────
+  static const Color textPrimary = Color(0xFFF8FAFC);
+  static const Color textSecondary = Color(0xFF94A3B8);
+  static const Color textMuted = Color(0xFF64748B);
+
+  // ── Light Mode Backgrounds & Surfaces ─────────────────────────────────────
+  static const Color bgLight = Color(0xFFFCF0DA);          // Warm Cream Background (#FCF0DA)
+  static const Color bgLightSurface = Color(0xFFFFFBF2);   // Soft Light Cream Card
+  static const Color bgLightSurfaceAlt = Color(0xFFF3E5C8);// Warm Sand / Secondary Surface
+  static const Color cardBorderLight = Color(0x228C6A3C);  // Soft warm border
+  static const Color cardBorderLightStrong = Color(0x448C6A3C);
+
+  // ── Light Mode Text Colors ─────────────────────────────────────────────────
+  static const Color textPrimaryLight = Color(0xFF2C221E); // Deep Warm Espresso / High Contrast
+  static const Color textSecondaryLight = Color(0xFF6E5B50);
+  static const Color textMutedLight = Color(0xFF9F8D82);
+
+  // Pillar Specific Colors
+  static const Color mentalColor = Color(0xFF8ACFF8);    // Sky Blue (#8ACFF8)
+  static const Color sleepColor = Color(0xFF75BEE9);     // Soft Cyan/Sky
+  static const Color physicalColor = Color(0xFFB8CFB3);  // Sage Green (#B8CFB3)
+  static const Color socialColor = Color(0xFFDA6556);    // Coral Red (#DA6556)
+  static const Color careerColor = Color(0xFFDB9558);    // Warm Amber (#DB9558)
+
+  // Cached ThemeData instances to avoid expensive font & theme re-evaluations during switches
+  static final ThemeData darkTheme = _buildDarkTheme();
+  static final ThemeData lightTheme = _buildLightTheme();
+
+  static ThemeData _buildDarkTheme() {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
-      scaffoldBackgroundColor: AppColors.darkBg,
-      primaryColor: AppColors.primary,
+      scaffoldBackgroundColor: bgDark,
+      primaryColor: primary,
       colorScheme: const ColorScheme.dark(
-        primary: AppColors.primary,
-        secondary: AppColors.secondary,
-        surface: AppColors.darkSurface,
-        error: AppColors.expense,
-        onPrimary: Colors.white,
-        onSecondary: Colors.white,
-        onSurface: AppColors.darkTextPrimary,
-        onError: Colors.white,
+        primary: primary,
+        secondary: secondary,
+        surface: bgSurface,
+        onSurface: textPrimary,
       ),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: false,
-        titleTextStyle: TextStyle(
-          fontSize: 20,
-          fontWeight: FontWeight.w700,
-          color: AppColors.darkTextPrimary,
-          letterSpacing: -0.5,
-        ),
-        iconTheme: IconThemeData(color: AppColors.darkTextPrimary),
+      textTheme: GoogleFonts.plusJakartaSansTextTheme(ThemeData.dark().textTheme).copyWith(
+        displayLarge: GoogleFonts.plusJakartaSans(color: textPrimary, fontWeight: FontWeight.w800, letterSpacing: -1.0),
+        displayMedium: GoogleFonts.plusJakartaSans(color: textPrimary, fontWeight: FontWeight.w800, letterSpacing: -0.5),
+        displaySmall: GoogleFonts.plusJakartaSans(color: textPrimary, fontWeight: FontWeight.w700),
+        headlineLarge: GoogleFonts.plusJakartaSans(color: textPrimary, fontWeight: FontWeight.w700, letterSpacing: -0.5),
+        headlineMedium: GoogleFonts.plusJakartaSans(color: textPrimary, fontWeight: FontWeight.w700),
+        headlineSmall: GoogleFonts.plusJakartaSans(color: textPrimary, fontWeight: FontWeight.w600),
+        titleLarge: GoogleFonts.plusJakartaSans(color: textPrimary, fontWeight: FontWeight.w700, letterSpacing: -0.3),
+        titleMedium: GoogleFonts.plusJakartaSans(color: textPrimary, fontWeight: FontWeight.w600),
+        titleSmall: GoogleFonts.plusJakartaSans(color: textPrimary, fontWeight: FontWeight.w600),
+        bodyLarge: GoogleFonts.plusJakartaSans(color: textPrimary, fontSize: 15, height: 1.5),
+        bodyMedium: GoogleFonts.plusJakartaSans(color: textSecondary, fontSize: 13, height: 1.45),
+        bodySmall: GoogleFonts.plusJakartaSans(color: textMuted, fontSize: 12, height: 1.4),
+        labelLarge: GoogleFonts.plusJakartaSans(color: textPrimary, fontWeight: FontWeight.w600, fontSize: 13),
+        labelMedium: GoogleFonts.plusJakartaSans(color: textSecondary, fontWeight: FontWeight.w500, fontSize: 12),
+        labelSmall: GoogleFonts.plusJakartaSans(color: textMuted, fontWeight: FontWeight.w500, fontSize: 11),
       ),
       cardTheme: CardThemeData(
-        color: AppColors.darkCard,
+        color: bgSurface,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
-          side: const BorderSide(color: AppColors.darkBorder, width: 1),
+          side: const BorderSide(color: cardBorder, width: 1),
         ),
       ),
-      dividerTheme: const DividerThemeData(
-        color: AppColors.darkBorder,
-        thickness: 1,
-      ),
-      dialogTheme: DialogThemeData(
-        backgroundColor: AppColors.darkSurface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      ),
-      bottomSheetTheme: const BottomSheetThemeData(
-        backgroundColor: AppColors.darkSurface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      appBarTheme: AppBarTheme(
+        backgroundColor: bgDark,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: false,
+        titleTextStyle: GoogleFonts.plusJakartaSans(
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          color: textPrimary,
+          letterSpacing: -0.3,
         ),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: primary,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          textStyle: GoogleFonts.plusJakartaSans(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: textPrimary,
+          side: const BorderSide(color: cardBorder),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          textStyle: GoogleFonts.plusJakartaSans(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: ZoomPageTransitionsBuilder(),
+          TargetPlatform.iOS: ZoomPageTransitionsBuilder(),
+        },
       ),
     );
   }
 
-  static ThemeData get lightTheme {
+  // ── Light Theme ─────────────────────────────────────────────────────────────
+  static ThemeData _buildLightTheme() {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
-      scaffoldBackgroundColor: AppColors.lightBg,
-      primaryColor: AppColors.primary,
+      scaffoldBackgroundColor: bgLight,
+      primaryColor: primary,
       colorScheme: const ColorScheme.light(
-        primary: AppColors.primary,
-        secondary: AppColors.secondary,
-        surface: AppColors.lightSurface,
-        error: AppColors.expense,
-        onPrimary: Colors.white,
-        onSecondary: Colors.white,
-        onSurface: AppColors.lightTextPrimary,
-        onError: Colors.white,
+        primary: primary,
+        secondary: secondary,
+        surface: bgLightSurface,
+        onSurface: textPrimaryLight,
       ),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: false,
-        titleTextStyle: TextStyle(
-          fontSize: 20,
-          fontWeight: FontWeight.w700,
-          color: AppColors.lightTextPrimary,
-          letterSpacing: -0.5,
-        ),
-        iconTheme: IconThemeData(color: AppColors.lightTextPrimary),
+      textTheme: GoogleFonts.plusJakartaSansTextTheme(ThemeData.light().textTheme).copyWith(
+        displayLarge: GoogleFonts.plusJakartaSans(color: textPrimaryLight, fontWeight: FontWeight.w800, letterSpacing: -1.0),
+        displayMedium: GoogleFonts.plusJakartaSans(color: textPrimaryLight, fontWeight: FontWeight.w800, letterSpacing: -0.5),
+        displaySmall: GoogleFonts.plusJakartaSans(color: textPrimaryLight, fontWeight: FontWeight.w700),
+        headlineLarge: GoogleFonts.plusJakartaSans(color: textPrimaryLight, fontWeight: FontWeight.w700, letterSpacing: -0.5),
+        headlineMedium: GoogleFonts.plusJakartaSans(color: textPrimaryLight, fontWeight: FontWeight.w700),
+        headlineSmall: GoogleFonts.plusJakartaSans(color: textPrimaryLight, fontWeight: FontWeight.w600),
+        titleLarge: GoogleFonts.plusJakartaSans(color: textPrimaryLight, fontWeight: FontWeight.w700, letterSpacing: -0.3),
+        titleMedium: GoogleFonts.plusJakartaSans(color: textPrimaryLight, fontWeight: FontWeight.w600),
+        titleSmall: GoogleFonts.plusJakartaSans(color: textPrimaryLight, fontWeight: FontWeight.w600),
+        bodyLarge: GoogleFonts.plusJakartaSans(color: textPrimaryLight, fontSize: 15, height: 1.5),
+        bodyMedium: GoogleFonts.plusJakartaSans(color: textSecondaryLight, fontSize: 13, height: 1.45),
+        bodySmall: GoogleFonts.plusJakartaSans(color: textMutedLight, fontSize: 12, height: 1.4),
+        labelLarge: GoogleFonts.plusJakartaSans(color: textPrimaryLight, fontWeight: FontWeight.w600, fontSize: 13),
+        labelMedium: GoogleFonts.plusJakartaSans(color: textSecondaryLight, fontWeight: FontWeight.w500, fontSize: 12),
+        labelSmall: GoogleFonts.plusJakartaSans(color: textMutedLight, fontWeight: FontWeight.w500, fontSize: 11),
       ),
       cardTheme: CardThemeData(
-        color: AppColors.lightCard,
+        color: bgLightSurface,
         elevation: 0,
+        shadowColor: Colors.black.withValues(alpha: 0.08),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
-          side: const BorderSide(color: AppColors.lightBorder, width: 1),
+          side: const BorderSide(color: cardBorderLight, width: 1),
         ),
       ),
-      dividerTheme: const DividerThemeData(
-        color: AppColors.lightBorder,
-        thickness: 1,
+      appBarTheme: AppBarTheme(
+        backgroundColor: bgLight,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: false,
+        titleTextStyle: GoogleFonts.plusJakartaSans(
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          color: textPrimaryLight,
+          letterSpacing: -0.3,
+        ),
+        iconTheme: const IconThemeData(color: textPrimaryLight),
       ),
-      dialogTheme: DialogThemeData(
-        backgroundColor: AppColors.lightSurface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      ),
-      bottomSheetTheme: const BottomSheetThemeData(
-        backgroundColor: AppColors.lightSurface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: primary,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          textStyle: GoogleFonts.plusJakartaSans(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: textPrimaryLight,
+          side: const BorderSide(color: cardBorderLight),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          textStyle: GoogleFonts.plusJakartaSans(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: ZoomPageTransitionsBuilder(),
+          TargetPlatform.iOS: ZoomPageTransitionsBuilder(),
+        },
+      ),
+    );
+  }
+
+  // ── Context-aware color helpers ───────────────────────────────────────────
+
+  /// Returns the appropriate card background for the current theme brightness.
+  static Color surfaceColor(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return isDark ? bgSurface : bgLightSurface;
+  }
+
+  static Color surfaceAltColor(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return isDark ? bgSurfaceLight : bgLightSurfaceAlt;
+  }
+
+  static Color borderColor(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return isDark ? cardBorder : cardBorderLight;
+  }
+
+  static Color onSurface(BuildContext context) =>
+      Theme.of(context).colorScheme.onSurface;
+
+  static Color onSurfaceSecondary(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return isDark ? textSecondary : textSecondaryLight;
+  }
+
+  static Color onSurfaceMuted(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return isDark ? textMuted : textMutedLight;
+  }
+
+  // ── Context-aware decoration helpers ─────────────────────────────────────
+
+  static BoxDecoration cardDecorationFor(
+    BuildContext context, {
+    double borderRadius = 20.0,
+    Color? customColor,
+    List<BoxShadow>? customShadow,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = customColor ?? (isDark ? bgSurface : bgLightSurface);
+    final border = isDark ? cardBorder : cardBorderLight;
+    return BoxDecoration(
+      color: bg,
+      borderRadius: BorderRadius.circular(borderRadius),
+      border: Border.all(color: border, width: 1.2),
+      boxShadow: customShadow ??
+          [
+            BoxShadow(
+              color: isDark
+                  ? Colors.black.withValues(alpha: 0.30)
+                  : const Color(0xFF8C6A3C).withValues(alpha: 0.08),
+              blurRadius: isDark ? 20 : 16,
+              offset: const Offset(0, 8),
+              spreadRadius: -3,
+            ),
+          ],
+    );
+  }
+
+  /// iOS Liquid Glass decoration with specular highlights and fluid gradient
+  static BoxDecoration liquidGlassDecoration(
+    BuildContext context, {
+    double borderRadius = 22.0,
+    Color? tint,
+    double opacity = 0.60,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final base = tint ??
+        (isDark
+            ? const Color(0xFF161E31).withValues(alpha: opacity)
+            : const Color(0xFFFFFDF8).withValues(alpha: opacity + 0.15));
+
+    return BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: isDark
+            ? [
+                (tint ?? const Color(0xFF283652)).withValues(alpha: opacity + 0.1),
+                base,
+                (tint ?? const Color(0xFF0F1626)).withValues(alpha: opacity * 0.8),
+              ]
+            : [
+                Colors.white.withValues(alpha: 0.90),
+                base,
+                const Color(0xFFF7ECE0).withValues(alpha: opacity),
+              ],
+        stops: const [0.0, 0.45, 1.0],
+      ),
+      borderRadius: BorderRadius.circular(borderRadius),
+      border: Border.all(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.15)
+            : Colors.white.withValues(alpha: 0.75),
+        width: 1.2,
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: isDark
+              ? Colors.black.withValues(alpha: 0.35)
+              : const Color(0xFF8C6A3C).withValues(alpha: 0.08),
+          blurRadius: 20,
+          offset: const Offset(0, 8),
+          spreadRadius: -4,
+        ),
+      ],
+    );
+  }
+
+  static BoxDecoration glassDecorationFor(
+    BuildContext context, {
+    double borderRadius = 20.0,
+    double opacity = 0.55,
+  }) {
+    return liquidGlassDecoration(
+      context,
+      borderRadius: borderRadius,
+      opacity: opacity,
+    );
+  }
+
+  // Modern Card Decoration Helper
+  static BoxDecoration cardDecoration({
+    double borderRadius = 20.0,
+    Color color = bgSurface,
+    Color? borderColor,
+    List<BoxShadow>? customShadow,
+  }) {
+    return BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(borderRadius),
+      border: Border.all(
+        color: borderColor ?? cardBorder,
+        width: 1.2,
+      ),
+      boxShadow: customShadow ?? [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.25),
+          blurRadius: 18,
+          offset: const Offset(0, 8),
+          spreadRadius: -3,
+        ),
+      ],
+    );
+  }
+
+  // Modern Gradient Card Decoration Helper
+  static BoxDecoration gradientCardDecoration({
+    double borderRadius = 20.0,
+    required List<Color> colors,
+    Color? borderColor,
+  }) {
+    return BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: colors,
+      ),
+      borderRadius: BorderRadius.circular(borderRadius),
+      border: Border.all(
+        color: borderColor ?? Colors.white.withValues(alpha: 0.25),
+        width: 1.2,
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: colors.first.withValues(alpha: 0.25),
+          blurRadius: 20,
+          offset: const Offset(0, 8),
+          spreadRadius: -4,
+        ),
+      ],
+    );
+  }
+
+  // Glass / Frosted Decoration Helper
+  static BoxDecoration glassDecoration({
+    double borderRadius = 20.0,
+    double opacity = 0.55,
+    Color? borderColor,
+  }) {
+    return BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Colors.white.withValues(alpha: opacity * 0.9),
+          Colors.white.withValues(alpha: opacity * 0.4),
+        ],
+      ),
+      borderRadius: BorderRadius.circular(borderRadius),
+      border: Border.all(
+        color: borderColor ?? Colors.white.withValues(alpha: 0.35),
+        width: 1.2,
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.15),
+          blurRadius: 16,
+          offset: const Offset(0, 6),
+          spreadRadius: -2,
+        ),
+      ],
     );
   }
 }

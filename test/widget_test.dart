@@ -1,20 +1,22 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:enigma/main.dart';
-import 'package:enigma/repositories/finance_repository.dart';
+import 'package:enigma/app.dart';
+import 'package:enigma/navigation/student_nav.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  testWidgets('Enigma App smoke test and UI verification', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
 
-  testWidgets('Enigma Finance app loads smoke test', (WidgetTester tester) async {
-    SharedPreferences.setMockInitialValues({});
-    final repository = await FinanceRepository.create();
+    // Build our app and trigger a frame.
+    await tester.pumpWidget(const EnigmaApp(home: StudentNav()));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
-    await tester.pumpWidget(EnigmaFinanceApp(repository: repository));
-    await tester.pumpAndSettle();
-
-    // Verify that the title or brand is displayed
-    expect(find.text('Enigma Finance'), findsOneWidget);
-    expect(find.text('Tổng quan'), findsOneWidget);
+    // Verify header and core sections exist
+    expect(find.text('Chỉ số phục hồi sức khỏe'), findsOneWidget);
+    expect(find.text('Cảm xúc hôm nay'), findsOneWidget);
+    expect(find.text('What Next?'), findsOneWidget);
   });
 }

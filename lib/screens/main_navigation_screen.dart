@@ -1,22 +1,30 @@
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
-import 'add_transaction_screen.dart';
-import 'dashboard_screen.dart';
-import 'statistics_screen.dart';
-import 'transactions_screen.dart';
-import 'wallets_screen.dart';
+import '../core/constants/app_colors.dart';
+import 'chat/ai_chat_screen.dart';
+import 'checkin/checkin_gacha_screen.dart';
+import 'handbook/handbook_screen.dart';
+import 'home/home_screen.dart';
+import 'profile/profile_screen.dart';
+import 'tasks/tasks_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
+  final int initialIndex;
+  const MainNavigationScreen({super.key, this.initialIndex = 0});
 
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _currentIndex = 0;
+  late int _currentIndex;
 
-  void _onTabChange(int index) {
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+  }
+
+  void _onTabTapped(int index) {
     setState(() {
       _currentIndex = index;
     });
@@ -24,147 +32,87 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final screens = [
-      DashboardScreen(onTabChange: _onTabChange),
-      const TransactionsScreen(),
-      const StatisticsScreen(),
-      const WalletsScreen(),
+    final List<Widget> screens = [
+      HomeScreen(onNavigateTab: _onTabTapped),
+      const CheckinGachaScreen(),
+      const TasksScreen(),
+      const HandbookScreen(),
+      const ProfileScreen(),
     ];
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       body: IndexedStack(
         index: _currentIndex,
         children: screens,
       ),
-      floatingActionButton: Container(
-        height: 60,
-        width: 60,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: AppColors.primaryGradient,
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primary.withValues(alpha: 0.4),
-              blurRadius: 15,
-              offset: const Offset(0, 6),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AiChatScreen()),
+          );
+        },
+        backgroundColor: AppColors.primary,
+        elevation: 6,
+        shape: const CircleBorder(),
+        child: Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: const LinearGradient(
+              colors: [AppColors.primary, AppColors.secondary],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-          ],
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: () => AddTransactionScreen.show(context),
-            child: const Icon(Icons.add_rounded, color: Colors.white, size: 34),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withOpacity(0.4),
+                blurRadius: 12,
+                spreadRadius: 2,
+              ),
+            ],
           ),
+          child: const Icon(Icons.smart_toy_outlined, color: AppColors.textOnPrimary, size: 28),
         ),
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      floatingActionButtonLocation: FloatingActionButtonLocation.miniEndFloat,
       bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-          border: Border(
-            top: BorderSide(
-              color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-              width: 1,
+        decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: AppColors.border, width: 1)),
+        ),
+        child: BottomNavigationBar(
+          currentIndex: _currentIndex,
+          onTap: _onTabTapped,
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home_outlined),
+              activeIcon: Icon(Icons.home),
+              label: 'Tổng quan',
             ),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.08),
-              blurRadius: 20,
-              offset: const Offset(0, -5),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.casino_outlined),
+              activeIcon: Icon(Icons.casino),
+              label: 'Gacha',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.checklist_rtl_outlined),
+              activeIcon: Icon(Icons.checklist_rtl),
+              label: 'Nhiệm vụ',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.menu_book_outlined),
+              activeIcon: Icon(Icons.menu_book),
+              label: 'Cẩm nang',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person_outline),
+              activeIcon: Icon(Icons.person),
+              label: 'Hồ sơ',
             ),
           ],
         ),
-        child: SafeArea(
-          child: SizedBox(
-            height: 64,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildNavItem(
-                  index: 0,
-                  icon: Icons.dashboard_outlined,
-                  activeIcon: Icons.dashboard_rounded,
-                  label: 'Tổng quan',
-                  isDark: isDark,
-                ),
-                _buildNavItem(
-                  index: 1,
-                  icon: Icons.receipt_long_outlined,
-                  activeIcon: Icons.receipt_long_rounded,
-                  label: 'Sổ GD',
-                  isDark: isDark,
-                ),
-                const SizedBox(width: 48), // Gap for Center Floating Action Button
-                _buildNavItem(
-                  index: 2,
-                  icon: Icons.pie_chart_outline_rounded,
-                  activeIcon: Icons.pie_chart_rounded,
-                  label: 'Báo cáo',
-                  isDark: isDark,
-                ),
-                _buildNavItem(
-                  index: 3,
-                  icon: Icons.account_balance_wallet_outlined,
-                  activeIcon: Icons.account_balance_wallet_rounded,
-                  label: 'Ví & Thẻ',
-                  isDark: isDark,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavItem({
-    required int index,
-    required IconData icon,
-    required IconData activeIcon,
-    required String label,
-    required bool isDark,
-  }) {
-    final isSelected = _currentIndex == index;
-    final color = isSelected
-        ? AppColors.primary
-        : (isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted);
-
-    return InkWell(
-      onTap: () => _onTabChange(index),
-      splashColor: Colors.transparent,
-      highlightColor: Colors.transparent,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-            decoration: BoxDecoration(
-              color: isSelected ? AppColors.primary.withValues(alpha: 0.12) : Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              isSelected ? activeIcon : icon,
-              color: color,
-              size: 22,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-              color: color,
-            ),
-          ),
-        ],
       ),
     );
   }

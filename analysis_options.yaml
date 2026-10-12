@@ -10,14 +10,13 @@
 include: package:flutter_lints/flutter.yaml
 
 analyzer:
-  errors:
-    non_const_argument_for_const_parameter: ignore
   exclude:
     - build/**
     - android/**
     - ios/**
-    - web/**
-    - windows/**
+  errors:
+    deprecated_member_use: ignore
+    unnecessary_underscores: ignore
 
 linter:
   # The lint rules applied to this project can be customized in the

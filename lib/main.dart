@@ -1,65 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import 'bloc/finance_bloc.dart';
-import 'bloc/finance_event.dart';
-import 'bloc/theme_bloc.dart';
-import 'repositories/finance_repository.dart';
-import 'screens/main_navigation_screen.dart';
+import 'core/utils/storage.dart';
+import 'core/api/api_client.dart';
+import 'core/services/push_notification_service.dart';
 import 'theme/app_theme.dart';
+import 'app.dart';
+
+/// Global navigator key để ApiClient có thể điều hướng về LoginScreen
+/// khi refresh token hết hạn (không cần BuildContext).
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Set preferred orientations for mobile (Portrait mode)
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
+  // Initialize local storage & secure storage
+  await StorageUtil.init();
 
-  // Make system navigation bar & status bar transparent
+  // Initialize API Client interceptors
+  ApiClient.init();
+
+  // Initialize Firebase & Push Notification Service
+  await PushNotificationService.init();
+
+  // Kết nối callback: khi cả refresh token hết hạn → tự động về LoginScreen
+  ApiClient.onUnauthorized = () {
+    navigatorKey.currentState?.pushNamedAndRemoveUntil('/login', (_) => false);
+  };
+
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.light,
-      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarColor: AppTheme.bgSurface,
       systemNavigationBarIconBrightness: Brightness.light,
     ),
   );
 
-  final repository = await FinanceRepository.create();
-
-  runApp(EnigmaFinanceApp(repository: repository));
-}
-
-class EnigmaFinanceApp extends StatelessWidget {
-  final FinanceRepository repository;
-
-  const EnigmaFinanceApp({super.key, required this.repository});
-
-  @override
-  Widget build(BuildContext context) {
-    return MultiBlocProvider(
-      providers: [
-        BlocProvider<FinanceBloc>(
-          create: (_) => FinanceBloc(repository: repository)..add(const LoadFinanceData()),
-        ),
-        BlocProvider<ThemeBloc>(
-          create: (_) => ThemeBloc(repository: repository),
-        ),
-      ],
-      child: BlocBuilder<ThemeBloc, ThemeMode>(
-        builder: (context, themeMode) {
-          return MaterialApp(
-            title: 'Enigma Finance',
-            debugShowCheckedModeBanner: false,
-            theme: AppTheme.lightTheme,
-            darkTheme: AppTheme.darkTheme,
-            themeMode: themeMode,
-            home: const MainNavigationScreen(),
-          );
-        },
-      ),
-    );
-  }
+  runApp(EnigmaApp(navigatorKey: navigatorKey));
 }
