@@ -6,6 +6,7 @@ import '../screens/student/tasks_screen.dart';
 import '../screens/student/checkin_gacha_screen.dart';
 import '../screens/student/handbook_screen.dart';
 import '../screens/student/chat_screen.dart';
+import '../widgets/sync_status_banner.dart';
 
 class StudentNav extends StatefulWidget {
   const StudentNav({super.key});
@@ -44,14 +45,24 @@ class StudentNavState extends State<StudentNav> {
   Widget build(BuildContext context) {
     return Scaffold(
       extendBody: true,
-      body: IndexedStack(
-        index: _currentIndex,
+      body: Column(
         children: [
-          for (int i = 0; i < _screens.length; i++)
-            TickerMode(
-              enabled: _currentIndex == i,
-              child: _screens[i],
+          const SafeArea(
+            bottom: false,
+            child: SyncStatusBanner(),
+          ),
+          Expanded(
+            child: IndexedStack(
+              index: _currentIndex,
+              children: [
+                for (int i = 0; i < _screens.length; i++)
+                  TickerMode(
+                    enabled: _currentIndex == i,
+                    child: _screens[i],
+                  ),
+              ],
             ),
+          ),
         ],
       ),
       bottomNavigationBar: RepaintBoundary(
@@ -62,11 +73,17 @@ class StudentNavState extends State<StudentNav> {
 
   Widget _buildLiquidGlassBottomNav() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    // Trên iPhone 16 (bottomInset ~34px), SafeArea bottom mặc định cộng dồn với margin
+    // làm dock bị đẩy lên 52px (quá cao). Tắt SafeArea bottom và tinh chỉnh margin đáy
+    // giúp thanh dock hạ xuống vừa vặn sát đáy.
+    final bottomMargin = bottomInset > 0 ? 8.0 : 12.0;
 
     return Padding(
-      padding: const EdgeInsets.only(left: 14, right: 14, bottom: 18),
+      padding: EdgeInsets.only(left: 14, right: 14, bottom: bottomMargin),
       child: SafeArea(
         top: false,
+        bottom: false,
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(28),
