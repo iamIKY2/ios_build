@@ -6,6 +6,8 @@ on:
     branches:
       - main
       - master
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
@@ -14,6 +16,7 @@ jobs:
   build-ios:
     name: 🎉 Build iOS IPA
     runs-on: macos-latest
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -21,8 +24,12 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.24.5'    # pin version để build ổn định
           channel: 'stable'
           cache: true
+
+      - name: Flutter clean
+        run: flutter clean
 
       - name: Get dependencies
         run: flutter pub get
@@ -31,11 +38,13 @@ jobs:
         run: flutter build ios --release --no-codesign
 
       - name: Package Payload to .ipa
+        working-directory: build/ios/iphoneos
         run: |
+          rm -rf Payload
           mkdir -p Payload
           cp -r Runner.app Payload/
           zip -qq -r -9 mentality.ipa Payload
-        working-directory: build/ios/iphoneos
+          ls -lh mentality.ipa
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
@@ -51,5 +60,13 @@ jobs:
           files: build/ios/iphoneos/mentality.ipa
           tag_name: ios-release-${{ github.run_number }}
           name: "iOS Build #${{ github.run_number }}"
-          body: "Tệp cài đặt IPA (unsigned) cho ứng dụng iOS được build tự động."
-        continue-on-error: true
+          body: |
+            ## iOS Build #${{ github.run_number }}
+            
+            - **Commit:** `${{ github.sha }}`
+            - **Branch:** `${{ github.ref_name }}`
+            - **Triggered by:** @${{ github.actor }}
+            
+            ⚠️ IPA unsigned — cần ký lại bằng Sideloadly/AltStore trước khi cài.
+          draft: false
+          prerelease: false
