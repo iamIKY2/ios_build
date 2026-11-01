@@ -16,23 +16,31 @@
   const RENDER_CLOUD_URL = 'https://mentality-38jh.onrender.com';
 
   function getInitialApiUrl() {
-    const saved = localStorage.getItem('enigma_api_url');
-    // Nếu chưa lưu hoặc đang lưu localhost thì chuyển hẳn sang Render theo yêu cầu
-    if (!saved || saved.includes('localhost') || saved.includes('127.0.0.1')) {
-      localStorage.setItem('enigma_api_url', RENDER_CLOUD_URL);
-      return RENDER_CLOUD_URL;
-    }
-    // Nếu đang chạy trực tiếp trên domain Render thì dùng chính domain đó
-    if (window.location.origin && window.location.origin.includes('onrender.com')) {
+    // Tự động nhận diện thông minh 100%:
+    // - Khi mở trên http://localhost:8000/admin-web/ -> Tự gọi http://localhost:8000
+    // - Khi mở trên https://mentality-38jh.onrender.com/admin-web/ -> Tự gọi https://mentality-38jh.onrender.com
+    if (window.location.origin && window.location.origin !== 'null' && !window.location.origin.startsWith('file:')) {
       return window.location.origin;
     }
-    return saved;
+    const saved = localStorage.getItem('enigma_api_url');
+    if (saved) return saved;
+    return RENDER_CLOUD_URL;
+  }
+
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   // ─── Application State ────────────────────────────────────────────────────────
   const STATE = {
     apiBaseUrl: getInitialApiUrl(),
-    adminToken: localStorage.getItem('enigma_admin_token') || 'enigma_admin_master_secret',
+    adminToken: localStorage.getItem('enigma_admin_token') || null,
     isDemoMode: false,
     activeTab: 'dashboard',
     activeTaskPhase: 'preparation',
@@ -44,6 +52,16 @@
     articles: [],
     tasks: [],
     notifications: [],
+    feed: [],
+    pendingCatalog: [],
+    approvedUniversities: [],
+    approvedCompanies: [],
+    studentPillFilter: 'all',
+    studentsViewMode: localStorage.getItem('enigma_students_view_mode') || 'grouped',
+    selectedUniversity: '',
+    selectedCompany: '',
+    collapsedUniGroups: new Set(),
+    allGroupsCollapsed: false,
 
     // Chart instances
     charts: {
@@ -67,6 +85,7 @@
     btnRefresh: document.getElementById('btn-refresh'),
     btnQuickBroadcast: document.getElementById('btn-quick-broadcast'),
     mobileMenuBtn: document.getElementById('mobile-menu-btn'),
+    sidebarToggleBtn: document.getElementById('sidebar-toggle'),
     sidebar: document.getElementById('sidebar'),
 
     // Badges
@@ -86,11 +105,20 @@
     dashboardFeedList: document.getElementById('dashboard-feed-list'),
     dashboardWatchlist: document.getElementById('dashboard-watchlist'),
 
-    // Students Directory
+    // Students Directory & University Groups
     studentsSearchInput: document.getElementById('students-search-input'),
+    studentsFilterUniversity: document.getElementById('students-filter-university'),
+    studentsFilterCompany: document.getElementById('students-filter-company'),
     studentsFilterPhase: document.getElementById('students-filter-phase'),
     studentsFilterRisk: document.getElementById('students-filter-risk'),
     studentsTbody: document.getElementById('students-tbody'),
+    studentsFlatWrapper: document.getElementById('students-flat-wrapper'),
+    studentsGroupedContainer: document.getElementById('students-grouped-container'),
+    universityChipsBar: document.getElementById('university-chips-bar'),
+    viewModeGroupedBtn: document.getElementById('view-mode-grouped'),
+    viewModeFlatBtn: document.getElementById('view-mode-flat'),
+    btnToggleAllGroups: document.getElementById('btn-toggle-all-groups'),
+    btnToggleAllText: document.getElementById('btn-toggle-all-text'),
     btnExportStudents: document.getElementById('btn-export-students'),
 
     // Burnout Alert Center
@@ -112,13 +140,31 @@
     broadcastForm: document.getElementById('broadcast-form'),
     notificationHistoryList: document.getElementById('notification-history-list'),
 
-    // Settings
+    // Pending Catalog Review
+    navBadgePending: document.getElementById('nav-badge-pending'),
+    pendingSearchInput: document.getElementById('pending-search-input'),
+    pendingFilterType: document.getElementById('pending-filter-type'),
+    btnRefreshPending: document.getElementById('btn-refresh-pending'),
+    pendingTbody: document.getElementById('pending-tbody'),
+
+    // Settings & Account
     settingApiUrl: document.getElementById('setting-api-url'),
-    settingAdminToken: document.getElementById('setting-admin-token'),
+    settingAdminAccount: document.getElementById('setting-admin-account'),
     btnSaveSettings: document.getElementById('btn-save-settings'),
     btnTestConnection: document.getElementById('btn-test-connection'),
     btnExportJson: document.getElementById('btn-export-json'),
     btnClearCache: document.getElementById('btn-clear-cache'),
+    btnAdminLogout: document.getElementById('btn-admin-logout'),
+    btnSettingsLogout: document.getElementById('btn-settings-logout'),
+
+    // Login Screen
+    loginScreen: document.getElementById('login-screen'),
+    appContainer: document.getElementById('app-container'),
+    loginForm: document.getElementById('admin-login-form'),
+    loginEmail: document.getElementById('admin-login-email'),
+    loginPassword: document.getElementById('admin-login-password'),
+    loginError: document.getElementById('admin-login-error'),
+    btnLoginSubmit: document.getElementById('btn-admin-login-submit'),
 
     // Modals
     userModal: document.getElementById('user-modal'),
@@ -126,6 +172,12 @@
     articleForm: document.getElementById('article-form'),
     taskModal: document.getElementById('task-modal'),
     taskForm: document.getElementById('task-form'),
+    interventionModal: document.getElementById('intervention-modal'),
+    interventionForm: document.getElementById('intervention-form'),
+
+    // Student Filter Controls
+    studentsPillButtons: document.querySelectorAll('.filter-pills-bar .pill-btn'),
+    studentsStatCards: document.querySelectorAll('.students-stat-strip .stat-mini-card'),
 
     // Toast
     toastContainer: document.getElementById('toast-container'),
@@ -145,7 +197,11 @@
       iconSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
     }
 
-    toast.innerHTML = `${iconSvg}<span>${message}</span>`;
+    toast.innerHTML = `${iconSvg}<span></span>`;
+    const msgSpan = toast.querySelector('span');
+    if (msgSpan) {
+      msgSpan.textContent = message;
+    }
     DOM.toastContainer.appendChild(toast);
 
     setTimeout(() => {
@@ -164,6 +220,10 @@
     students: {
       title: 'Quản Lý Sinh Viên Thực Tập',
       subtitle: 'Danh bạ sinh viên, phân loại theo doanh nghiệp, giai đoạn và chỉ số sức khỏe',
+    },
+    pending: {
+      title: 'Duyệt Đơn Vị Đề Xuất (Chờ Duyệt)',
+      subtitle: 'Xem xét phê duyệt, gộp vào đơn vị chuẩn hóa hoặc từ chối các trường và công ty do sinh viên đề xuất',
     },
     burnout: {
       title: 'Trung Tâm Cảnh Báo Kiệt Sức',
@@ -216,6 +276,8 @@
       renderTasksTable();
     } else if (tabName === 'notifications') {
       renderNotificationHistory();
+    } else if (tabName === 'pending') {
+      loadPendingCatalog();
     }
 
     // Close mobile sidebar
@@ -225,6 +287,46 @@
   // ─── Rich Mock / Demo Data Generator ──────────────────────────────────────────
   function getMockData() {
     const mockStudents = [
+      {
+        id: "sv-bdu-01",
+        student_id: "23050067",
+        full_name: "Khang Duy",
+        email: "duyvsh1234@gmail.com",
+        university: "Đại Học Bình Dương",
+        major: "Công nghệ thông tin (CNTT)",
+        company_name: "LG Display Hải Phòng",
+        department: "Kỹ thuật Phần mềm & Test",
+        work_shift: "day_12h",
+        current_phase: "preparation",
+        current_streak: 5,
+        latest_stress_level: 5,
+        latest_sleep_hours: 6.0,
+        is_high_risk: true,
+        is_active: true,
+        role: "student",
+        initial_scores: { sleep: 65, physical: 70, mental: 50, social: 75, career: 85 },
+        created_at: "2026-10-09T13:50:28Z"
+      },
+      {
+        id: "sv-bdu-02",
+        student_id: "23050010",
+        full_name: "Châu Gia Bảo",
+        email: "23050010@student.bdu.edu.vn",
+        university: "Đại Học Bình Dương",
+        major: "Công nghệ thông tin (CNTT)",
+        company_name: "LG Display Hải Phòng",
+        department: "Phòng Tự động hóa Dây chuyền",
+        work_shift: "night_12h",
+        current_phase: "adaptation",
+        current_streak: 12,
+        latest_stress_level: 2,
+        latest_sleep_hours: 7.2,
+        is_high_risk: false,
+        is_active: true,
+        role: "student",
+        initial_scores: { sleep: 80, physical: 75, mental: 80, social: 70, career: 85 },
+        created_at: "2026-10-12T14:32:09Z"
+      },
       {
         id: "sv-101",
         student_id: "B21DCCN045",
@@ -580,8 +682,60 @@
     };
   }
 
-  // ─── API Fetcher with Auto-Fallback ───────────────────────────────────────────
+  // ─── Auth & Screen Control Helpers ────────────────────────────────────────────
+  function showLoginScreen(errorMessage = '') {
+    if (DOM.loginScreen) DOM.loginScreen.style.display = 'flex';
+    if (DOM.appContainer) DOM.appContainer.style.display = 'none';
+    if (DOM.loginError) {
+      if (errorMessage) {
+        DOM.loginError.textContent = errorMessage;
+        DOM.loginError.style.display = 'block';
+      } else {
+        DOM.loginError.textContent = '';
+        DOM.loginError.style.display = 'none';
+      }
+    }
+    if (DOM.loginPassword) DOM.loginPassword.value = '';
+  }
+
+  function hideLoginScreen() {
+    if (DOM.loginScreen) DOM.loginScreen.style.display = 'none';
+    if (DOM.appContainer) DOM.appContainer.style.display = 'flex';
+    if (DOM.loginError) DOM.loginError.style.display = 'none';
+  }
+
+  function updateAdminProfileUI() {
+    try {
+      const userStr = localStorage.getItem('enigma_admin_user');
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        const displayName = user.full_name || user.email || 'Quản Trị Viên';
+        const elName = document.getElementById('admin-display-name');
+        const elAvatar = document.getElementById('admin-avatar');
+        if (elName) elName.textContent = displayName;
+        if (elAvatar) elAvatar.textContent = (user.full_name ? user.full_name.charAt(0) : 'A').toUpperCase();
+        if (DOM.settingAdminAccount) DOM.settingAdminAccount.value = `${displayName} (${user.email || ''})`;
+      }
+    } catch (e) {
+      console.warn('Không thể đọc thông tin admin_user:', e);
+    }
+  }
+
+  function logoutAdmin() {
+    localStorage.removeItem('enigma_admin_token');
+    localStorage.removeItem('enigma_admin_user');
+    STATE.adminToken = null;
+    showToast('Đã đăng xuất tài khoản quản trị.', 'info');
+    showLoginScreen();
+  }
+
+  // ─── API Fetcher with Automatic Bearer Header & 401 Interception ───────────────
   async function apiFetch(endpoint, options = {}) {
+    if (!STATE.adminToken) {
+      showLoginScreen('Vui lòng đăng nhập bằng tài khoản quản trị để tiếp tục.');
+      return null;
+    }
+
     const url = `${STATE.apiBaseUrl}${endpoint}`;
     const headers = {
       'Content-Type': 'application/json',
@@ -592,77 +746,73 @@
     try {
       const response = await fetch(url, { ...options, headers });
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        if (response.status === 401) {
+          console.warn(`[AUTH] 401 Unauthorized khi gọi ${endpoint}. Chuyển về màn hình đăng nhập.`);
+          localStorage.removeItem('enigma_admin_token');
+          localStorage.removeItem('enigma_admin_user');
+          STATE.adminToken = null;
+          showLoginScreen('Phiên làm việc đã hết hạn hoặc không có quyền quản trị (401). Vui lòng đăng nhập lại.');
+          return null;
+        }
+        let errDetail = `HTTP ${response.status}: ${response.statusText}`;
+        try {
+          const errBody = await response.json();
+          if (errBody && errBody.detail) errDetail = errBody.detail;
+        } catch (_) {}
+        const error = new Error(errDetail);
+        error.status = response.status;
+        throw error;
       }
       return await response.json();
     } catch (err) {
       console.warn(`[API] Gọi thất bại tới ${endpoint}:`, err.message);
+      if (options.method && options.method !== 'GET') {
+        showToast(err.message, 'error');
+      }
       return null;
     }
   }
 
   // ─── Initial Data Loader ──────────────────────────────────────────────────────
   async function loadAllData() {
-    try {
-      // 1. Kiểm tra máy chủ: thử /admin/stats hoặc kiểm tra /health
-      let liveStats = await apiFetch('/admin/stats');
-      let isServerLive = !!liveStats;
+    // 1. Thử kết nối API live
+    const liveStats = await apiFetch('/admin/stats');
+    
+    if (liveStats) {
+      // Backend đang chạy tốt!
+      STATE.isDemoMode = false;
+      DOM.statusIndicator.className = 'status-indicator live';
+      const isRender = STATE.apiBaseUrl.includes('onrender.com');
+      DOM.statusLabel.textContent = isRender ? 'Render Cloud (Live)' : `Live API (${new URL(STATE.apiBaseUrl).host})`;
+      DOM.toggleDataModeBtn.textContent = 'Đổi sang Demo';
+      STATE.stats = liveStats;
 
-      if (!isServerLive) {
-        const health = await apiFetch('/health');
-        if (health && health.status === 'ok') {
-          isServerLive = true;
-        }
-      }
+      // Fetch live collections
+      const [students, alerts, articles, tasks, notifications, feed] = await Promise.all([
+        apiFetch('/admin/users'),
+        apiFetch('/admin/burnout-alerts'),
+        apiFetch('/admin/handbook'),
+        apiFetch('/admin/tasks'),
+        apiFetch('/admin/notifications/history'),
+        apiFetch('/admin/feed')
+      ]);
 
-      if (isServerLive) {
-        // Backend đang chạy tốt!
-        STATE.isDemoMode = false;
-        DOM.statusIndicator.className = 'status-indicator live';
-        const isRender = STATE.apiBaseUrl.includes('onrender.com');
-        DOM.statusLabel.textContent = isRender ? 'Render Cloud (Live)' : `Live API (${new URL(STATE.apiBaseUrl).host})`;
-        DOM.toggleDataModeBtn.textContent = 'Đổi sang Demo';
+      await loadPendingCatalog();
 
-        // Fetch live collections
-        const [students, alerts, articles, tasks, notifications] = await Promise.all([
-          apiFetch('/admin/users'),
-          apiFetch('/admin/burnout-alerts'),
-          apiFetch('/handbook'),
-          apiFetch('/tasks'),
-          apiFetch('/admin/notifications/history')
-        ]);
-
-        const mock = getMockData();
-        STATE.stats = liveStats || {
-          ...mock.stats,
-          total_articles: (articles && articles.length) || mock.stats.total_articles,
-          total_tasks: (tasks && tasks.length) || mock.stats.total_tasks
-        };
-        STATE.students = (students && students.length) ? students : mock.students;
-        STATE.alerts = (alerts && alerts.length) ? alerts : mock.alerts;
-        STATE.articles = (articles && articles.length) ? articles : mock.articles;
-        STATE.tasks = (tasks && tasks.length) ? tasks : mock.tasks;
-        STATE.notifications = (notifications && notifications.length) ? notifications : mock.notifications;
-        showToast('Đã kết nối thành công tới Render Cloud & Supabase!', 'success');
-      } else {
-        // Tự động chuyển sang chế độ Demo Data phong phú
-        STATE.isDemoMode = true;
-        DOM.statusIndicator.className = 'status-indicator demo';
-        DOM.statusLabel.textContent = 'Chế Độ Demo Data (Mượt mà)';
-        DOM.toggleDataModeBtn.textContent = 'Thử Kết Nối Live';
-
-        const mock = getMockData();
-        STATE.stats = mock.stats;
-        STATE.students = mock.students;
-        STATE.alerts = mock.alerts;
-        STATE.articles = mock.articles;
-        STATE.tasks = mock.tasks;
-        STATE.notifications = mock.notifications;
-        showToast('Máy chủ Render đang tạm khởi động (~50s). Đang hiển thị chế độ Demo mượt mà!', 'info');
-      }
-    } catch (err) {
-      console.warn('[Enigma] Lỗi trong quá trình nạp dữ liệu:', err);
+      STATE.students = students || [];
+      STATE.alerts = alerts || [];
+      STATE.articles = articles || [];
+      STATE.tasks = tasks || [];
+      STATE.notifications = notifications || [];
+      STATE.feed = feed || [];
+      showToast('Đã đồng bộ dữ liệu từ máy chủ Enigma Backend!', 'success');
+    } else {
+      // Tự động chuyển sang chế độ Demo Data phong phú
       STATE.isDemoMode = true;
+      DOM.statusIndicator.className = 'status-indicator demo';
+      DOM.statusLabel.textContent = 'Chế Độ Demo Data (Mượt mà)';
+      DOM.toggleDataModeBtn.textContent = 'Thử Kết Nối Live';
+
       const mock = getMockData();
       STATE.stats = mock.stats;
       STATE.students = mock.students;
@@ -670,26 +820,29 @@
       STATE.articles = mock.articles;
       STATE.tasks = mock.tasks;
       STATE.notifications = mock.notifications;
-    } finally {
-      // Đảm bảo giao diện luôn luôn được render đầy đủ, tuyệt đối không bị đơ
-      updateBadges();
-      renderKPIs();
-      renderDashboardLists();
-      renderDashboardCharts();
-      renderStudentsTable();
-      renderBurnoutCards();
-      renderHandbookArticles();
-      renderTasksTable();
-      renderNotificationHistory();
+      STATE.feed = [];
+      showToast('Đang hiển thị chế độ Dữ liệu Demo trực quan!', 'info');
     }
+
+    // Cập nhật UI
+    updateBadges();
+    renderKPIs();
+    renderDashboardLists();
+    renderDashboardCharts();
+    renderStudentsTable();
+    renderBurnoutCards();
+    renderHandbookArticles();
+    renderTasksTable();
+    renderNotificationHistory();
   }
 
   // ─── Render Badges & KPIs ─────────────────────────────────────────────────────
   function updateBadges() {
+    const alertCount = (STATE.alerts || []).length;
     DOM.navBadgeStudents.textContent = STATE.students.length || '--';
-    DOM.navBadgeAlerts.textContent = STATE.alerts.length || '0';
+    DOM.navBadgeAlerts.textContent = alertCount || '0';
     DOM.navBadgeArticles.textContent = STATE.articles.length || '--';
-    DOM.quickAlertCount.textContent = `${STATE.alerts.length} Ca Cảnh Báo`;
+    DOM.quickAlertCount.textContent = `${alertCount} Ca Cảnh Báo`;
   }
 
   function renderKPIs() {
@@ -705,38 +858,63 @@
 
   // ─── Render Dashboard Feed & Watchlist ────────────────────────────────────────
   function renderDashboardLists() {
-    // 1. Feed gần nhất
-    const feedQuotes = [
-      { user: "Nguyễn Minh Khang (B21DCCN045)", quote: "Vượt qua thử thách hôm nay sẽ là niềm tự hào của ngày mai.", time: "10 phút trước" },
-      { user: "Trần Thị Thùy Linh (B21DCCN189)", quote: "Hít thở sâu 4 giây và thả lỏng bắp cơ vai gáy.", time: "25 phút trước" },
-      { user: "Lê Hoàng Long (B21DCCN312)", quote: "An toàn lao động và 5S là nguyên tắc số một.", time: "42 phút trước" },
-      { user: "Phạm Quốc Tuấn (B21DCCN408)", quote: "Uống đủ nước để duy trì sự tỉnh táo trong ca dài.", time: "1 giờ trước" }
-    ];
+    // 1. Feed hoạt động & Gacha Quote thực tế từ database
+    const feedItems = (STATE.feed && STATE.feed.length > 0)
+      ? STATE.feed
+      : [
+          { user: "Nguyễn Minh Khang (B21DCCN045)", quote: "Vượt qua thử thách hôm nay sẽ là niềm tự hào của ngày mai.", time: "10 phút trước" },
+          { user: "Trần Thị Thùy Linh (B21DCCN189)", quote: "Hít thở sâu 4 giây và thả lỏng bắp cơ vai gáy.", time: "25 phút trước" },
+          { user: "Lê Hoàng Long (B21DCCN312)", quote: "An toàn lao động và 5S là nguyên tắc số một.", time: "42 phút trước" },
+          { user: "Phạm Quốc Tuấn (B21DCCN408)", quote: "Uống đủ nước để duy trì sự tỉnh táo trong ca dài.", time: "1 giờ trước" }
+        ];
 
-    DOM.dashboardFeedList.innerHTML = feedQuotes.map(item => `
-      <div class="feed-item">
-        <div class="avatar">${item.user.charAt(0)}</div>
-        <div class="feed-content">
-          <div class="feed-user">
-            <span>${item.user}</span>
-            <span class="feed-time">${item.time}</span>
+    DOM.dashboardFeedList.innerHTML = feedItems.map(item => {
+      const userText = escapeHtml(item.user || `${item.full_name || 'Sinh viên'} (${item.student_id || 'SV'})`);
+      const initial = (item.full_name || item.user || 'S').charAt(0);
+      const quoteText = escapeHtml(item.quote || 'Chúc bạn ca làm việc an toàn và năng lượng!');
+      
+      let timeText = item.time || '';
+      if (!timeText && item.created_at) {
+        try {
+          const d = new Date(item.created_at);
+          timeText = d.toLocaleDateString('vi-VN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        } catch (_) {
+          timeText = item.checkin_date || 'Gần đây';
+        }
+      } else if (!timeText) {
+        timeText = item.checkin_date || 'Hôm nay';
+      }
+
+      const catBadge = item.category 
+        ? `<span class="badge badge-subtle text-xs" style="margin-left:6px">${escapeHtml(item.category)}</span>` 
+        : '';
+
+      return `
+        <div class="feed-item">
+          <div class="avatar">${escapeHtml(initial)}</div>
+          <div class="feed-content">
+            <div class="feed-user">
+              <span>${userText} ${catBadge}</span>
+              <span class="feed-time">${escapeHtml(timeText)}</span>
+            </div>
+            <p class="feed-quote">"${quoteText}"</p>
           </div>
-          <p class="feed-quote">"${item.quote}"</p>
         </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
 
     // 2. Watchlist kiệt sức
-    if (STATE.alerts.length === 0) {
+    const alertList = STATE.alerts || [];
+    if (alertList.length === 0) {
       DOM.dashboardWatchlist.innerHTML = `<p class="text-subtle text-center py-4">Hiện không có sinh viên nào trong vùng nguy cơ cao.</p>`;
     } else {
-      DOM.dashboardWatchlist.innerHTML = STATE.alerts.slice(0, 3).map(a => `
+      DOM.dashboardWatchlist.innerHTML = alertList.slice(0, 3).map(a => `
         <div class="watchlist-item">
           <div class="watchlist-info">
-            <h4>${a.full_name} (${a.student_id || 'Chưa có MSSV'})</h4>
-            <p>${a.company_name} — Mức Stress: <strong class="text-danger">${a.stress_level}/5</strong> | Ngủ: ${a.sleep_hours}h</p>
+            <h4>${escapeHtml(a.full_name || 'Chưa có tên')} (${escapeHtml(a.student_id || 'Chưa có MSSV')})</h4>
+            <p>${escapeHtml(a.company_name || 'Chưa có')} — Mức Stress: <strong class="text-danger">${a.stress_level}/5</strong> | Ngủ: ${a.sleep_hours !== null && a.sleep_hours !== undefined ? `${a.sleep_hours}h` : 'Chưa có dữ liệu giấc ngủ'}</p>
           </div>
-          <button class="btn btn-sm btn-danger-outline" onclick="window.EnigmaApp.openIntervention('${a.user_id}')">Can Thiệp</button>
+          <button class="btn btn-sm btn-danger-outline" onclick="window.EnigmaApp.openIntervention('${escapeHtml(a.user_id)}')">Can Thiệp</button>
         </div>
       `).join('');
     }
@@ -905,91 +1083,421 @@
     }
   }
 
-  // ─── Render Students Directory Table ──────────────────────────────────────────
+  // ─── University Normalization Helper ──────────────────────────────────────────
+  function getStudentUniLabel(s) {
+    if (s.university_name && s.university_name.trim() && s.university_name.trim() !== 'Chưa phân loại') {
+      return s.university_name.trim();
+    }
+    return 'Chưa phân loại';
+  }
+
+  // ─── Render University Quick Chips ───────────────────────────────────────────
+  function renderUniversityChips() {
+    if (!DOM.universityChipsBar) return;
+
+    const countsMap = new Map();
+    let totalAll = 0;
+    STATE.students.forEach(s => {
+      totalAll++;
+      const uniLabel = getStudentUniLabel(s);
+      const groupKey = uniLabel;
+      if (!countsMap.has(groupKey)) {
+        countsMap.set(groupKey, {
+          key: groupKey,
+          label: uniLabel,
+          count: 0,
+          companies: new Set()
+        });
+      }
+      const entry = countsMap.get(groupKey);
+      entry.count++;
+      if (s.company_id && s.company_name) {
+        entry.companies.add(s.company_name);
+      }
+    });
+
+    let chipsHtml = `
+      <button type="button" class="uni-chip ${STATE.selectedUniversity === '' ? 'active' : ''}" data-uni-key="">
+        <span>Tất Cả Các Trường</span>
+        <span class="chip-count">${totalAll}</span>
+      </button>
+    `;
+
+    countsMap.forEach(item => {
+      const isActive = STATE.selectedUniversity === item.label;
+      const compLabel = item.companies.size > 0 ? [...item.companies].join(', ') : 'Chưa chọn nơi thực tập';
+      chipsHtml += `
+        <button type="button" class="uni-chip ${isActive ? 'active' : ''}" data-uni-key="${escapeHtml(item.label)}">
+          <span>🏛️ ${escapeHtml(item.label)}</span>
+          <small class="text-muted" style="margin-left: 2px;">(${escapeHtml(compLabel)})</small>
+          <span class="chip-count">${item.count}</span>
+        </button>
+      `;
+    });
+
+    DOM.universityChipsBar.innerHTML = chipsHtml;
+
+    DOM.universityChipsBar.querySelectorAll('.uni-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const uniKey = btn.getAttribute('data-uni-key') || '';
+        window.EnigmaApp.selectUniPill(uniKey);
+      });
+    });
+  }
+
+  // ─── Update University & Company Dropdowns ────────────────────────────────────
+  function updateUniversityDropdowns() {
+    if (!DOM.studentsFilterUniversity || !DOM.studentsFilterCompany) return;
+
+    const universities = [...new Set(STATE.students.map(s => getStudentUniLabel(s)))].sort();
+    const companies = [...new Set(STATE.students.map(s => (s.company_id && s.company_name) ? s.company_name : 'Chưa chọn nơi thực tập'))].sort();
+
+    const currentUni = DOM.studentsFilterUniversity.value;
+    const currentComp = DOM.studentsFilterCompany.value;
+
+    DOM.studentsFilterUniversity.innerHTML = '<option value="">Tất cả các trường</option>' +
+      universities.map(u => `<option value="${escapeHtml(u)}" ${u === currentUni ? 'selected' : ''}>${escapeHtml(u)}</option>`).join('');
+
+    DOM.studentsFilterCompany.innerHTML = '<option value="">Tất cả công ty thực tập</option>' +
+      companies.map(c => `<option value="${escapeHtml(c)}" ${c === currentComp ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
+  }
+
+  // ─── Render Single Student Row ────────────────────────────────────────────────
+  function renderStudentRow(s, phaseNames) {
+    let stressDisplay = '<span class="text-subtle">—</span>';
+    if (s.latest_stress_level !== null && s.latest_stress_level !== undefined) {
+      const lvl = s.latest_stress_level;
+      const cls = lvl >= 4 ? 'stress-badge-danger' : (lvl === 3 ? 'stress-badge-warning' : 'stress-badge-success');
+      stressDisplay = `<span class="status-chip ${cls}"><span class="chip-dot"></span>Mức ${lvl}/5</span>`;
+    }
+
+    const phaseDisplay = s.current_phase
+      ? (phaseNames[s.current_phase] || `<span class="status-chip">${escapeHtml(s.current_phase)}</span>`)
+      : '<span class="text-subtle">—</span>';
+
+    const shiftPill = s.work_shift === 'night_12h' 
+      ? '<span class="shift-badge shift-night">🌙 Ca đêm (20h-8h)</span>' 
+      : (s.work_shift === 'office_8h' 
+        ? '<span class="shift-badge shift-office">💼 Hành chính</span>' 
+        : (s.work_shift === 'day_12h' 
+          ? '<span class="shift-badge shift-day">☀️ Ca ngày (8h-20h)</span>' 
+          : ''));
+
+    let sleepDisplay = '<span class="text-subtle">—</span>';
+    if (s.latest_sleep_hours !== null && s.latest_sleep_hours !== undefined) {
+      if (s.latest_sleep_hours < 5) {
+        sleepDisplay = `<span class="status-chip sleep-danger" title="Ngủ dưới 5h/ngày">⚠️ ${s.latest_sleep_hours}h</span>`;
+      } else {
+        sleepDisplay = `<span class="sleep-val">${s.latest_sleep_hours}h</span>`;
+      }
+    }
+
+    const streakCount = s.current_streak || 0;
+    const streakDisplay = streakCount > 0
+      ? `<span class="streak-badge-active">🔥 ${streakCount} ngày</span>`
+      : `<span class="text-subtle">0 ngày</span>`;
+
+    const statusDisplay = s.is_active 
+      ? '<span class="status-chip status-active"><span class="chip-dot"></span>Hoạt động</span>' 
+      : '<span class="status-chip status-locked"><span class="chip-dot"></span>Bị khóa</span>';
+
+    return `
+      <tr>
+        <td>
+          <div class="user-cell">
+            <div class="avatar">${escapeHtml(s.full_name ? s.full_name.charAt(0) : 'U')}</div>
+            <div>
+              <h4>${escapeHtml(s.full_name || 'Chưa có tên')}</h4>
+              <p>${escapeHtml(s.email || '')}</p>
+            </div>
+          </div>
+        </td>
+        <td>
+          <strong>${escapeHtml(s.student_id || 'Chưa có')}</strong>
+          <p class="text-muted" style="margin-bottom: 2px;">${escapeHtml(s.major || 'Chưa có ngành')}</p>
+          ${s.university_pending_name ? `<span class="badge badge-warning" style="display:inline-block; margin-top:2px; font-size:11px;" title="Trường do sinh viên đề xuất đang chờ duyệt">⏳ Đề xuất: ${escapeHtml(s.university_pending_name)}</span>` : ''}
+          ${(!s.university_id && s.university && s.university.trim() && s.university.trim() !== 'Chưa phân loại' && !s.university_pending_name) ? `<small class="text-subtle" style="font-size: 11px; display: block;">Gốc: ${escapeHtml(s.university.trim())}</small>` : ''}
+        </td>
+        <td>
+          <strong>${escapeHtml((s.company_id && s.company_name) ? s.company_name : 'Chưa chọn nơi thực tập')}</strong>
+          ${s.company_pending_name ? `<span class="badge badge-warning" style="display:inline-block; margin-top:2px; font-size:11px;" title="Nơi thực tập do sinh viên đề xuất đang chờ duyệt">⏳ Đề xuất: ${escapeHtml(s.company_pending_name)}</span>` : ''}
+          <p class="text-muted" style="margin-bottom:2px">${escapeHtml(s.department || 'Chưa có ban')}</p>
+          ${shiftPill}
+        </td>
+        <td>${phaseDisplay}</td>
+        <td>${stressDisplay}</td>
+        <td>${sleepDisplay}</td>
+        <td>${streakDisplay}</td>
+        <td>${statusDisplay}</td>
+        <td class="text-right">
+          <div class="table-actions">
+            <button type="button" class="btn-tb-intervene" title="Gửi can thiệp tâm lý & lời khuyên cho sinh viên này" onclick="window.EnigmaApp.openIntervention('${escapeHtml(s.id)}')">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+              </svg>
+              <span>Can Thiệp</span>
+            </button>
+            <button type="button" class="btn-tb-detail" title="Xem chi tiết hồ sơ" onclick="window.EnigmaApp.openUserDetail('${escapeHtml(s.id)}')">
+              <span>Chi Tiết</span>
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+
+  // ─── Render Students Directory (Grouped by University & Workplace) ─────────────
   function renderStudentsTable() {
-    const search = DOM.studentsSearchInput.value.toLowerCase().trim();
-    const phase = DOM.studentsFilterPhase.value;
-    const risk = DOM.studentsFilterRisk.value;
+    // 1. Cập nhật số liệu trên 4 thẻ Quick Stat Strip
+    const totalCount = STATE.students.length;
+    const highRiskCount = STATE.students.filter(s => s.is_high_risk || (s.latest_stress_level !== null && s.latest_stress_level >= 4)).length;
+    const nightShiftCount = STATE.students.filter(s => s.work_shift === 'night_12h').length;
+    const streakActiveCount = STATE.students.filter(s => (s.current_streak || 0) > 0).length;
+
+    const elTotal = document.getElementById('sq-total-students');
+    const elRisk = document.getElementById('sq-high-risk');
+    const elNight = document.getElementById('sq-night-shift');
+    const elStreak = document.getElementById('sq-streak-active');
+
+    if (elTotal) elTotal.textContent = totalCount;
+    if (elRisk) elRisk.textContent = highRiskCount;
+    if (elNight) elNight.textContent = nightShiftCount;
+    if (elStreak) elStreak.textContent = streakActiveCount;
+
+    // Cập nhật thanh chips và dropdowns
+    renderUniversityChips();
+    updateUniversityDropdowns();
+
+    // 2. Lọc dữ liệu sinh viên
+    const search = DOM.studentsSearchInput ? DOM.studentsSearchInput.value.toLowerCase().trim() : '';
+    const phase = DOM.studentsFilterPhase ? DOM.studentsFilterPhase.value : '';
+    const risk = DOM.studentsFilterRisk ? DOM.studentsFilterRisk.value : '';
+    const pill = STATE.studentPillFilter || 'all';
+    const filterUni = STATE.selectedUniversity || (DOM.studentsFilterUniversity ? DOM.studentsFilterUniversity.value : '');
+    const filterComp = STATE.selectedCompany || (DOM.studentsFilterCompany ? DOM.studentsFilterCompany.value : '');
 
     let filtered = STATE.students.filter(s => {
+      const uniName = getStudentUniLabel(s);
+      const compName = (s.company_id && s.company_name) ? s.company_name : 'Chưa chọn nơi thực tập';
+
+      // University Filter
+      if (filterUni && uniName.toLowerCase() !== filterUni.toLowerCase()) {
+        return false;
+      }
+
+      // Company Filter
+      if (filterComp && compName.toLowerCase() !== filterComp.toLowerCase()) {
+        return false;
+      }
+
       // Search
       const matchSearch = !search ||
         (s.full_name && s.full_name.toLowerCase().includes(search)) ||
         (s.student_id && s.student_id.toLowerCase().includes(search)) ||
         (s.email && s.email.toLowerCase().includes(search)) ||
-        (s.university && s.university.toLowerCase().includes(search));
+        (s.major && s.major.toLowerCase().includes(search)) ||
+        (s.department && s.department.toLowerCase().includes(search)) ||
+        (compName && compName.toLowerCase().includes(search)) ||
+        (uniName && uniName.toLowerCase().includes(search));
 
-      // Phase
+      // Phase dropdown
       const matchPhase = !phase || s.current_phase === phase;
 
-      // Risk
+      // Risk dropdown
       let matchRisk = true;
-      if (risk === 'high') matchRisk = s.is_high_risk;
+      if (risk === 'high') matchRisk = s.is_high_risk || (s.latest_stress_level !== null && s.latest_stress_level >= 4);
       if (risk === 'active') matchRisk = s.is_active;
 
-      return matchSearch && matchPhase && matchRisk;
+      // Filter Pill
+      let matchPill = true;
+      if (pill === 'high_risk') {
+        matchPill = s.is_high_risk || (s.latest_stress_level !== null && s.latest_stress_level >= 4);
+      } else if (pill === 'night_shift') {
+        matchPill = s.work_shift === 'night_12h';
+      } else if (pill === 'streak') {
+        matchPill = (s.current_streak || 0) > 0;
+      } else if (pill === 'active') {
+        matchPill = s.is_active;
+      }
+
+      return matchSearch && matchPhase && matchRisk && matchPill;
     });
 
+    const phaseNames = {
+      preparation: '<span class="status-chip phase-prep">1. Chuẩn Bị</span>',
+      adaptation: '<span class="status-chip phase-adapt">2. Hòa Nhập</span>',
+      sustain: '<span class="status-chip phase-sustain">3. Duy Trì</span>'
+    };
+
+    // Kiểm tra trường hợp không tìm thấy kết quả
     if (filtered.length === 0) {
-      DOM.studentsTbody.innerHTML = `
-        <tr>
-          <td colspan="9" class="text-center py-6 text-subtle">
-            Không tìm thấy sinh viên nào phù hợp với bộ lọc tìm kiếm.
-          </td>
-        </tr>
-      `;
+      if (DOM.studentsGroupedContainer) {
+        DOM.studentsGroupedContainer.innerHTML = `
+          <div class="card p-6 text-center text-subtle">
+            🔍 Không tìm thấy sinh viên hoặc trường nào phù hợp với bộ lọc tìm kiếm hiện tại.
+          </div>
+        `;
+      }
+      if (DOM.studentsTbody) {
+        DOM.studentsTbody.innerHTML = `
+          <tr>
+            <td colspan="9" class="text-center py-6 text-subtle">
+              Không tìm thấy sinh viên nào phù hợp với điều kiện lọc hiện tại.
+            </td>
+          </tr>
+        `;
+      }
       return;
     }
 
-    const phaseNames = {
-      preparation: '<span class="badge badge-primary">1. Chuẩn Bị</span>',
-      adaptation: '<span class="badge badge-info">2. Hòa Nhập</span>',
-      sustain: '<span class="badge badge-emerald">3. Duy Trì</span>'
-    };
+    // ─── CHẾ ĐỘ 1: GOM NHÓM THEO TRƯỜNG & NƠI THỰC TẬP (Mặc định) ───────────────
+    if (STATE.studentsViewMode === 'grouped') {
+      if (DOM.studentsFlatWrapper) DOM.studentsFlatWrapper.style.display = 'none';
+      if (DOM.studentsGroupedContainer) DOM.studentsGroupedContainer.style.display = 'flex';
 
-    DOM.studentsTbody.innerHTML = filtered.map(s => {
-      const stressLvl = s.latest_stress_level || 2;
-      return `
-        <tr>
-          <td>
-            <div class="user-cell">
-              <div class="avatar">${s.full_name ? s.full_name.charAt(0) : 'U'}</div>
-              <div>
-                <h4>${s.full_name}</h4>
-                <p>${s.email}</p>
+      // Gom nhóm sinh viên theo university_name với nhóm tường minh "Chưa phân loại"
+      const groupsMap = new Map();
+      filtered.forEach(s => {
+        const uniLabel = getStudentUniLabel(s);
+        const isUnassigned = (uniLabel === 'Chưa phân loại');
+        const groupKey = isUnassigned ? 'unassigned' : uniLabel;
+        const groupLabel = isUnassigned ? 'Chưa phân loại' : uniLabel;
+        if (!groupsMap.has(groupKey)) {
+          groupsMap.set(groupKey, {
+            id: groupKey,
+            name: groupLabel,
+            isUnassigned: isUnassigned,
+            students: []
+          });
+        }
+        groupsMap.get(groupKey).students.push(s);
+      });
+
+      let groupCardsHtml = '';
+      let groupIndex = 0;
+      groupsMap.forEach((groupData, groupKey) => {
+        const uniName = groupData.name;
+        const studentsInGroup = groupData.students;
+        const safeKey = String(groupKey).replace(/[^A-Za-z0-9_-]/g, '_');
+        const slug = `grp_${groupIndex++}_${safeKey}`;
+        const isCollapsed = STATE.collapsedUniGroups.has(slug);
+
+        const totalInUni = studentsInGroup.length;
+        const nightShiftsInUni = studentsInGroup.filter(s => s.work_shift === 'night_12h').length;
+        const highRiskInUni = studentsInGroup.filter(s => s.is_high_risk || (s.latest_stress_level !== null && s.latest_stress_level >= 4)).length;
+        
+        // Liệt kê công ty tiếp nhận và chuyên ngành
+        const companies = [...new Set(studentsInGroup.map(s => (s.company_id && s.company_name) ? s.company_name : 'Chưa chọn nơi thực tập'))].join(', ');
+        const majors = [...new Set(studentsInGroup.map(s => s.major).filter(Boolean))].join(', ') || 'Kỹ thuật / Công nghệ';
+
+        // Nhãn phụ hiển thị văn bản gốc của trường nếu là nhóm Chưa phân loại
+        let rawSchoolsSub = '';
+        if (groupData.isUnassigned) {
+          const rawTexts = [...new Set(studentsInGroup.map(s => s.university && s.university.trim()).filter(Boolean))].filter(t => t !== 'Chưa phân loại');
+          if (rawTexts.length > 0) {
+            rawSchoolsSub = ` &bull; <small class="text-subtle">Văn bản gốc: ${escapeHtml(rawTexts.join(', '))}</small>`;
+          }
+        }
+
+        groupCardsHtml += `
+          <div class="uni-group-card ${isCollapsed ? 'collapsed' : ''} ${groupData.isUnassigned ? 'uni-group-unassigned' : ''}" id="uni-group-${slug}">
+            <div class="uni-group-header" onclick="window.EnigmaApp.toggleUniGroup('${slug}')">
+              <div class="uni-group-title-col">
+                <div class="uni-icon-box" style="${groupData.isUnassigned ? 'background: rgba(245, 158, 11, 0.15); color: #f59e0b;' : ''}">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 21h18"/>
+                    <path d="M5 21V7l7-4 7 4v14"/>
+                    <path d="M9 21v-6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v6"/>
+                  </svg>
+                </div>
+                <div>
+                  <div class="uni-title-row">
+                    <h3 class="uni-name">${escapeHtml(uniName)}</h3>
+                    ${groupData.isUnassigned ? '<span class="status-chip stress-badge-warning" style="font-size: 11px; margin-left: 6px;">Chưa phân loại</span>' : ''}
+                    <span class="uni-cohort-tag">🏢 Nơi thực tập: <strong>${escapeHtml(companies)}</strong></span>
+                  </div>
+                  <p class="uni-subtitle">
+                    Chuyên ngành: <span class="uni-major-tag">${escapeHtml(majors)}</span>${rawSchoolsSub}
+                  </p>
+                </div>
+              </div>
+
+              <div class="uni-group-stats">
+                <div class="uni-stat-pill">
+                  <span class="uni-stat-num">${totalInUni}</span>
+                  <span class="uni-stat-lbl">Sinh viên</span>
+                </div>
+                ${nightShiftsInUni > 0 ? `
+                  <div class="uni-stat-pill shift-night">
+                    <span class="uni-stat-num">🌙 ${nightShiftsInUni}</span>
+                    <span class="uni-stat-lbl">Ca đêm</span>
+                  </div>
+                ` : ''}
+                ${highRiskInUni > 0 ? `
+                  <div class="uni-stat-pill risk-danger">
+                    <span class="uni-stat-num">🚨 ${highRiskInUni}</span>
+                    <span class="uni-stat-lbl">Cần can thiệp</span>
+                  </div>
+                ` : `
+                  <div class="uni-stat-pill status-safe">
+                    <span class="uni-stat-num">🛡️ Ổn định</span>
+                    <span class="uni-stat-lbl">Tâm lý tốt</span>
+                  </div>
+                `}
+                <button type="button" class="uni-collapse-btn" aria-label="Mở rộng hoặc thu gọn đoàn thực tập">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M6 9l6 6 6-6"/>
+                  </svg>
+                </button>
               </div>
             </div>
-          </td>
-          <td>
-            <strong>${s.student_id || 'Chưa cập nhật'}</strong>
-            <p class="text-muted">${s.university || 'N/A'}</p>
-          </td>
-          <td>
-            <span>${s.company_name || 'LG Display'}</span>
-            <p class="text-muted">${s.department || 'Ban sản xuất'}</p>
-          </td>
-          <td>${phaseNames[s.current_phase] || s.current_phase}</td>
-          <td>
-            <span class="stress-pill level-${stressLvl}">Mức ${stressLvl}/5</span>
-          </td>
-          <td><strong>${s.latest_sleep_hours || 7.0}h</strong></td>
-          <td>🔥 ${s.current_streak || 0} ngày</td>
-          <td>
-            ${s.is_active 
-              ? '<span class="badge badge-emerald">Hoạt động</span>' 
-              : '<span class="badge badge-danger">Bị khóa</span>'}
-          </td>
-          <td class="text-right">
-            <button class="btn btn-sm btn-secondary" onclick="window.EnigmaApp.openUserDetail('${s.id}')">Chi Tiết</button>
-          </td>
-        </tr>
-      `;
-    }).join('');
+
+            <div class="uni-group-body">
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 220px;">Sinh Viên</th>
+                      <th style="width: 150px;">MSSV / Ngành</th>
+                      <th style="width: 180px;">Công Ty & Ca Làm</th>
+                      <th style="width: 130px;">Giai Đoạn</th>
+                      <th style="width: 110px;">Stress Gần Nhất</th>
+                      <th style="width: 90px;">Giờ Ngủ</th>
+                      <th style="width: 95px;">Chuỗi Streak</th>
+                      <th style="width: 105px;">Trạng Thái</th>
+                      <th style="width: 165px;" class="text-right">Hành Động Cố Vấn</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${studentsInGroup.map(s => renderStudentRow(s, phaseNames)).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+
+      if (DOM.studentsGroupedContainer) {
+        DOM.studentsGroupedContainer.innerHTML = groupCardsHtml;
+      }
+    } 
+    // ─── CHẾ ĐỘ 2: BẢNG TOÀN BỘ (Flat Table) ────────────────────────────────────
+    else {
+      if (DOM.studentsGroupedContainer) DOM.studentsGroupedContainer.style.display = 'none';
+      if (DOM.studentsFlatWrapper) DOM.studentsFlatWrapper.style.display = 'block';
+
+      if (DOM.studentsTbody) {
+        DOM.studentsTbody.innerHTML = filtered.map(s => renderStudentRow(s, phaseNames)).join('');
+      }
+    }
   }
 
   // ─── Render Burnout Alert Cards ───────────────────────────────────────────────
   function renderBurnoutCards() {
-    if (STATE.alerts.length === 0) {
+    const alertList = STATE.alerts || [];
+
+    if (alertList.length === 0) {
       DOM.burnoutCardsContainer.innerHTML = `
         <div class="card p-6 text-center text-subtle" style="grid-column: 1 / -1;">
           🎉 Tuyệt vời! Hiện tại không có sinh viên nào rơi vào ngưỡng cảnh báo kiệt sức trầm trọng.
@@ -998,15 +1506,22 @@
       return;
     }
 
-    DOM.burnoutCardsContainer.innerHTML = STATE.alerts.map(a => `
+    DOM.burnoutCardsContainer.innerHTML = alertList.map(a => {
+      const companyDept = [a.company_name, a.department].filter(Boolean).map(escapeHtml).join(' — ') || 'Chưa có';
+      const phaseText = a.current_phase ? ` &bull; Giai đoạn: ${escapeHtml(a.current_phase)}` : ' &bull; Giai đoạn: Chưa có';
+      const noteHtml = a.note 
+        ? `"${escapeHtml(a.note)}"` 
+        : '<span class="text-subtle">Không có ghi chú</span>';
+
+      return `
       <div class="burnout-card ${a.risk_level}">
         <div class="burnout-card-header">
           <div>
-            <h3 class="burnout-student-name">${a.full_name}</h3>
-            <p class="text-subtle">${a.student_id || 'Chưa có MSSV'} — ${a.department}</p>
+            <h3 class="burnout-student-name">${escapeHtml(a.full_name || 'Chưa có tên')}</h3>
+            <p class="text-subtle">${escapeHtml(a.student_id || 'Chưa có MSSV')} — ${companyDept}${phaseText}</p>
           </div>
-          <span class="badge ${a.risk_level === 'critical' ? 'badge-danger pulse-dot' : 'badge-amber'}">
-            ${a.risk_level === 'critical' ? 'RỦI RO ĐỎ' : 'CẢNH BÁO'}
+          <span class="badge ${a.risk_level === 'critical' || a.risk_level === 'danger' ? 'badge-danger pulse-dot' : 'badge-amber'}">
+            ${a.risk_level === 'critical' || a.risk_level === 'danger' ? 'RỦI RO ĐỎ' : 'CẢNH BÁO'}
           </span>
         </div>
 
@@ -1017,29 +1532,30 @@
           </div>
           <div class="metric-badge-box">
             <span class="label">Giờ Ngủ</span>
-            <span class="val text-danger">${a.sleep_hours}h</span>
+            <span class="val text-danger">${a.sleep_hours !== null && a.sleep_hours !== undefined ? `${a.sleep_hours}h` : 'Chưa có dữ liệu giấc ngủ'}</span>
           </div>
           <div class="metric-badge-box">
             <span class="label">AI Sentiment</span>
-            <span class="val">${a.ai_sentiment}</span>
+            <span class="val">${escapeHtml(a.ai_sentiment || 'Chưa có')}</span>
           </div>
         </div>
 
         <div class="symptoms-tags">
-          ${(a.physical_symptoms || []).map(sym => `<span class="symptom-tag">⚠️ ${sym}</span>`).join('')}
+          ${(a.physical_symptoms || []).map(sym => `<span class="symptom-tag">⚠️ ${escapeHtml(sym)}</span>`).join('')}
         </div>
 
         <div class="burnout-note-quote">
-          "${a.note || 'Không có ghi chú thêm.'}"
+          ${noteHtml}
         </div>
 
         <div class="card-footer-actions mt-auto">
-          <button class="btn btn-sm btn-primary btn-block" onclick="window.EnigmaApp.openIntervention('${a.user_id}')">
+          <button class="btn btn-sm btn-primary btn-block" onclick="window.EnigmaApp.openIntervention('${escapeHtml(a.user_id)}')">
             📞 Gửi Can Thiệp Tâm Lý & Lời Khuyên
           </button>
         </div>
       </div>
-    `).join('');
+    `;
+    }).join('');
   }
 
   // ─── Render Handbook Articles ─────────────────────────────────────────────────
@@ -1079,15 +1595,15 @@
 
     DOM.handbookArticlesContainer.innerHTML = filtered.map(art => `
       <div class="article-card">
-        <span class="article-category-badge">${catLabels[art.category] || art.category}</span>
-        <h3 class="article-card-title">${art.title}</h3>
-        <p class="article-card-summary">${art.summary || art.content.slice(0, 120) + '...'}</p>
+        <span class="article-category-badge">${catLabels[art.category] || escapeHtml(art.category)}</span>
+        <h3 class="article-card-title">${escapeHtml(art.title)}</h3>
+        <p class="article-card-summary">${escapeHtml(art.summary || art.content.slice(0, 120) + '...')}</p>
         
         <div class="article-meta-row">
-          <span>Tác giả: <strong>${art.author_name || 'Cố vấn'}</strong></span>
+          <span>Tác giả: <strong>${escapeHtml(art.author_name || 'Cố vấn')}</strong></span>
           <div class="article-actions">
-            <button class="btn btn-sm btn-secondary" onclick="window.EnigmaApp.editArticle('${art.id}')">Sửa</button>
-            <button class="btn btn-sm btn-danger-outline" onclick="window.EnigmaApp.deleteArticle('${art.id}')">Xóa</button>
+            <button class="btn btn-sm btn-secondary" onclick="window.EnigmaApp.editArticle('${escapeHtml(art.id)}')">Sửa</button>
+            <button class="btn btn-sm btn-danger-outline" onclick="window.EnigmaApp.deleteArticle('${escapeHtml(art.id)}')">Xóa</button>
           </div>
         </div>
       </div>
@@ -1121,10 +1637,10 @@
     DOM.tasksTbody.innerHTML = filtered.map(t => `
       <tr>
         <td>
-          <strong>${t.title}</strong>
-          <p class="text-muted">${t.description}</p>
+          <strong>${escapeHtml(t.title)}</strong>
+          <p class="text-muted">${escapeHtml(t.description)}</p>
         </td>
-        <td><span class="badge badge-info">${pillarIcons[t.pillar] || t.pillar}</span></td>
+        <td><span class="badge badge-info">${pillarIcons[t.pillar] || escapeHtml(t.pillar)}</span></td>
         <td>⏱️ ${t.duration_minutes || 15} phút</td>
         <td>📅 Ngày thứ ${t.unlock_day || 1}</td>
         <td>✅ ${t.completed_count || 0} lượt</td>
@@ -1134,7 +1650,7 @@
             : '<span class="badge badge-subtle">Ẩn</span>'}
         </td>
         <td class="text-right">
-          <button class="btn btn-sm btn-secondary" onclick="window.EnigmaApp.editTask('${t.id}')">Sửa</button>
+          <button class="btn btn-sm btn-secondary" onclick="window.EnigmaApp.editTask('${escapeHtml(t.id)}')">Sửa</button>
         </td>
       </tr>
     `).join('');
@@ -1149,10 +1665,10 @@
 
     DOM.notificationHistoryList.innerHTML = STATE.notifications.map(n => `
       <div class="history-item">
-        <h4>📢 ${n.title}</h4>
-        <p>${n.body}</p>
+        <h4>📢 ${escapeHtml(n.title)}</h4>
+        <p>${escapeHtml(n.body)}</p>
         <div class="history-meta">
-          <span>Loại: <strong>${n.type}</strong></span>
+          <span>Loại: <strong>${escapeHtml(n.type)}</strong></span>
           <span>${new Date(n.sent_at || Date.now()).toLocaleTimeString()} - ${new Date(n.sent_at || Date.now()).toLocaleDateString()}</span>
         </div>
       </div>
@@ -1170,16 +1686,25 @@
       user = { ...user, ...detail.user, ...detail.profile };
     }
 
-    document.getElementById('um-fullname').textContent = user.full_name;
-    document.getElementById('um-student-id').textContent = user.student_id || 'MSSV N/A';
-    document.getElementById('um-phase').textContent = `Giai đoạn: ${user.current_phase || 'adaptation'}`;
+    document.getElementById('um-fullname').textContent = user.full_name || 'Chưa có tên';
+    document.getElementById('um-student-id').textContent = user.student_id || 'Chưa có';
+    document.getElementById('um-phase').textContent = `Giai đoạn: ${user.current_phase || 'Chưa có'}`;
     document.getElementById('um-avatar').textContent = user.full_name ? user.full_name.charAt(0) : 'U';
-    document.getElementById('um-name-card').textContent = user.full_name;
-    document.getElementById('um-email').textContent = user.email;
-    document.getElementById('um-company').textContent = `${user.company_name || 'LG Display'} — ${user.department || 'Ban sản xuất'}`;
+    document.getElementById('um-name-card').textContent = user.full_name || 'Chưa có tên';
+    document.getElementById('um-email').textContent = user.email || 'Chưa có';
+    const shiftText = user.work_shift === 'night_12h' 
+      ? '🌙 Ca đêm (20h-8h)' 
+      : (user.work_shift === 'office_8h' 
+        ? '💼 Hành chính' 
+        : (user.work_shift === 'day_12h' 
+          ? '☀️ Ca ngày (8h-20h)' 
+          : 'Chưa có ca làm'));
+    const companyDisplay = escapeHtml((user.company_id && user.company_name) ? user.company_name : 'Chưa chọn nơi thực tập');
+    const deptDisplay = escapeHtml(user.department || 'Chưa có');
+    document.getElementById('um-company').innerHTML = `${companyDisplay} — ${deptDisplay} &bull; <span class="text-white">${shiftText}</span>`;
 
     // 5 Pillars scores
-    const scores = user.initial_scores || { sleep: 70, physical: 65, mental: 60, social: 75, career: 80 };
+    const scores = (detail && detail.profile && detail.profile.initial_scores) || user.initial_scores || { sleep: 70, physical: 65, mental: 60, social: 75, career: 80 };
     document.getElementById('um-pillar-scores').innerHTML = `
       <div class="pillar-score-row"><span>🌙 Giấc ngủ (Sleep):</span><strong>${scores.sleep}/100</strong></div>
       <div class="pillar-score-row"><span>💪 Thể chất (Physical):</span><strong>${scores.physical}/100</strong></div>
@@ -1188,22 +1713,71 @@
       <div class="pillar-score-row"><span>🚀 Sự nghiệp (Career):</span><strong>${scores.career}/100</strong></div>
     `;
 
-    // Nhật ký 7 ngày mẫu
-    const sampleJournals = [
-      { date: 'Hôm nay', stress: user.latest_stress_level || 2, sleep: user.latest_sleep_hours || 7.5, note: 'Hoàn thành ca tốt, không gặp trục trặc máy móc.' },
-      { date: 'Hôm qua', stress: 3, sleep: 6.5, note: 'Hơi mỏi chân do đi lại nhiều giữa 2 line máy.' },
-      { date: '2 ngày trước', stress: 2, sleep: 7.0, note: 'Đã quen với giờ ăn trưa tại nhà ăn công ty.' }
-    ];
+    // Nhật ký thực tế của sinh viên (hiển thị toàn bộ lịch sử từ API nếu có)
+    const journalList = (detail && Array.isArray(detail.journals) && detail.journals.length > 0)
+      ? detail.journals
+      : [];
 
-    document.getElementById('um-journals-list').innerHTML = sampleJournals.map(j => `
-      <div class="ujournal-item">
-        <div class="flex justify-between text-xs text-muted mb-1">
-          <span>${j.date}</span>
-          <span>Stress: <strong>${j.stress}/5</strong> | Ngủ: <strong>${j.sleep}h</strong></span>
-        </div>
-        <p class="text-xs">"${j.note}"</p>
-      </div>
-    `).join('');
+    if (journalList.length > 0) {
+      document.getElementById('um-journals-list').innerHTML = journalList.map(j => {
+        const stressDisplay = (j.stress_level !== null && j.stress_level !== undefined)
+          ? `${j.stress_level}/5`
+          : 'Chưa có dữ liệu';
+        const sleepDisplay = (j.sleep_hours !== null && j.sleep_hours !== undefined)
+          ? `${j.sleep_hours}h`
+          : 'Chưa có dữ liệu giấc ngủ';
+        const dateDisplay = escapeHtml(j.journal_date || 'Gần nhất');
+        const noteDisplay = j.note 
+          ? `"${escapeHtml(j.note)}"` 
+          : '<span class="text-subtle">Không có ghi chú</span>';
+        const symptomsHtml = (j.physical_symptoms && j.physical_symptoms.length > 0)
+          ? `<div class="symptoms-tags my-1">${j.physical_symptoms.map(sym => `<span class="symptom-tag text-xs">⚠️ ${escapeHtml(sym)}</span>`).join('')}</div>`
+          : '';
+
+        return `
+          <div class="ujournal-item mb-2">
+            <div class="flex justify-between text-xs text-muted mb-1">
+              <span>📅 ${dateDisplay}</span>
+              <span>Stress: <strong>${stressDisplay}</strong> | Ngủ: <strong>${sleepDisplay}</strong></span>
+            </div>
+            ${symptomsHtml}
+            <p class="text-xs">${noteDisplay}</p>
+          </div>
+        `;
+      }).join('');
+    } else {
+      const hasSingleJournal = (user.latest_stress_level !== null && user.latest_stress_level !== undefined) ||
+                               (user.latest_sleep_hours !== null && user.latest_sleep_hours !== undefined) ||
+                               Boolean(user.latest_journal_date) ||
+                               Boolean(user.latest_note);
+
+      if (!hasSingleJournal) {
+        document.getElementById('um-journals-list').innerHTML = `
+          <p class="text-subtle text-center py-4 text-xs">Chưa có nhật ký</p>
+        `;
+      } else {
+        const stressDisplay = (user.latest_stress_level !== null && user.latest_stress_level !== undefined)
+          ? `${user.latest_stress_level}/5`
+          : 'Chưa có dữ liệu';
+        const sleepDisplay = (user.latest_sleep_hours !== null && user.latest_sleep_hours !== undefined)
+          ? `${user.latest_sleep_hours}h`
+          : 'Chưa có dữ liệu giấc ngủ';
+        const dateDisplay = escapeHtml(user.latest_journal_date || 'Gần nhất');
+        const noteDisplay = user.latest_note 
+          ? `"${escapeHtml(user.latest_note)}"` 
+          : '<span class="text-subtle">Không có ghi chú</span>';
+
+        document.getElementById('um-journals-list').innerHTML = `
+          <div class="ujournal-item">
+            <div class="flex justify-between text-xs text-muted mb-1">
+              <span>📅 ${dateDisplay}</span>
+              <span>Stress: <strong>${stressDisplay}</strong> | Ngủ: <strong>${sleepDisplay}</strong></span>
+            </div>
+            <p class="text-xs">${noteDisplay}</p>
+          </div>
+        `;
+      }
+    }
 
     // Toggle status button
     const btnToggle = document.getElementById('um-btn-toggle-status');
@@ -1219,6 +1793,15 @@
       renderStudentsTable();
       DOM.userModal.classList.remove('open');
     };
+
+    // Can thiệp tâm lý button inside detail drawer
+    const btnIntervention = document.getElementById('um-btn-send-intervention');
+    if (btnIntervention) {
+      btnIntervention.onclick = () => {
+        DOM.userModal.classList.remove('open');
+        openInterventionModal(user.id);
+      };
+    }
 
     DOM.userModal.classList.add('open');
   }
@@ -1320,13 +1903,13 @@
     STATE.students.forEach(s => {
       csvRows.push([
         s.student_id || '',
-        `"${s.full_name || ''}"`,
+        `"${(s.full_name || '').replace(/"/g, '""')}"`,
         s.email || '',
-        `"${s.university || ''}"`,
-        `"${s.company_name || ''}"`,
-        s.current_phase || '',
-        s.latest_stress_level || 2,
-        s.latest_sleep_hours || 7,
+        `"${(s.university || '').replace(/"/g, '""')}"`,
+        `"${(s.company_name || 'Chưa có').replace(/"/g, '""')}"`,
+        s.current_phase || 'Chưa có',
+        (s.latest_stress_level !== null && s.latest_stress_level !== undefined) ? s.latest_stress_level : 'Chưa có dữ liệu',
+        (s.latest_sleep_hours !== null && s.latest_sleep_hours !== undefined) ? s.latest_sleep_hours : 'Chưa có dữ liệu',
         s.current_streak || 0,
         s.is_active ? 'Active' : 'Locked'
       ].join(','));
@@ -1353,42 +1936,29 @@
   // ─── Settings Handlers ────────────────────────────────────────────────────────
   DOM.btnSaveSettings.addEventListener('click', () => {
     const newUrl = DOM.settingApiUrl.value.trim();
-    const newToken = DOM.settingAdminToken.value.trim();
     STATE.apiBaseUrl = newUrl;
-    STATE.adminToken = newToken;
     localStorage.setItem('enigma_api_url', newUrl);
-    localStorage.setItem('enigma_admin_token', newToken);
     showToast('Đã lưu cấu hình kết nối API!', 'success');
-    loadAllData();
+    if (STATE.adminToken) {
+      loadAllData();
+    }
   });
 
-  DOM.btnTestConnection.addEventListener('click', async () => {
-    const targetUrl = DOM.settingApiUrl.value.trim().replace(/\/+$/, '');
-    showToast(`Đang kiểm tra kết nối tới: ${targetUrl} ...`, 'info', 4000);
-    try {
-      // Kiểm tra lần lượt /health, /handbook hoặc root /
-      let isOk = false;
-      const res = await fetch(`${targetUrl}/health`).catch(() => null);
-      if (res && (res.ok || res.status === 200 || res.status === 307)) {
-        isOk = true;
-      } else {
-        const resHb = await fetch(`${targetUrl}/handbook`).catch(() => null);
-        if (resHb && resHb.ok) isOk = true;
-      }
+  if (DOM.btnAdminLogout) {
+    DOM.btnAdminLogout.addEventListener('click', logoutAdmin);
+  }
 
-      if (isOk) {
-        showToast('Kết nối thành công tới máy chủ Render Cloud!', 'success');
-        STATE.apiBaseUrl = targetUrl;
-        localStorage.setItem('enigma_api_url', targetUrl);
-        DOM.statusIndicator.className = 'status-indicator live';
-        DOM.statusLabel.textContent = 'Render Cloud (Live)';
-        STATE.isDemoMode = false;
-        loadAllData();
-      } else {
-        showToast(`Không thể kết nối tới máy chủ. Vui lòng kiểm tra lại đường truyền hoặc xem Render có đang sleep không.`, 'error');
-      }
-    } catch (err) {
-      showToast(`Lỗi kết nối: ${err.message}`, 'error');
+  if (DOM.btnSettingsLogout) {
+    DOM.btnSettingsLogout.addEventListener('click', logoutAdmin);
+  }
+
+  DOM.btnTestConnection.addEventListener('click', async () => {
+    showToast('Đang kiểm tra kết nối tới Backend...', 'info');
+    const res = await apiFetch('/admin/stats');
+    if (res) {
+      showToast('Kết nối thành công tới FastAPI Server!', 'success');
+    } else {
+      showToast('Không thể kết nối. Kiểm tra xem FastAPI đã chạy trên cổng này chưa.', 'error');
     }
   });
 
@@ -1396,6 +1966,197 @@
     localStorage.clear();
     showToast('Đã xóa bộ nhớ đệm. Đang tải lại...', 'info');
     setTimeout(() => location.reload(), 1000);
+  });
+
+  // ─── Quick Advice Templates for Psychological Intervention ───────────────────
+  const INTERVENTION_TEMPLATES = {
+    sleep: {
+      title: "Lời khuyên phục hồi nhịp sinh học & giấc ngủ ca đêm",
+      type: "recovery",
+      message: "Chào em, Thầy/Cô thấy em vừa hoàn thành ca kíp căng thẳng và số giờ ngủ gần đây khá ít. Em hãy nhớ kéo rèm phòng tối, uống một ly nước ấm và dành ít nhất 7-8 tiếng nghỉ ngơi để phục hồi thể lực nhé!"
+    },
+    stress: {
+      title: "Hỗ trợ giảm căng thẳng & kỹ thuật thở sâu",
+      type: "counseling",
+      message: "Chào em, Thầy/Cô nhận thấy mức độ căng thẳng của em đang tăng. Em hãy thử bài tập thở 4-4-4 (Box Breathing) 3 phút, thả lỏng vai gáy và đừng ngần ngại chia sẻ nếu gặp khó khăn trong công việc nhé."
+    },
+    counseling: {
+      title: "Mời hẹn gặp trao đổi 1-1 cùng Cố vấn thực tập",
+      type: "counseling",
+      message: "Chào em, Cố vấn thực tập trường muốn hẹn gặp em trao đổi ngắn 15 phút (trực tiếp tại văn phòng hoặc online) để lắng nghe và hỗ trợ em giải quyết các vướng mắc trong ca làm. Em phản hồi lại tin nhắn này nhé!"
+    },
+    physical: {
+      title: "Hướng dẫn bảo vệ cơ xương khớp & chân khi mang giày ESD",
+      type: "recovery",
+      message: "Chào em, khi làm việc trong phòng sạch hoặc đứng dây chuyền dài với giày ESD, em hãy chú ý thay lót giày êm ái, ngâm chân nước ấm buổi tối và thực hiện bài giãn cơ thắt lưng theo cẩm nang Enigma nhé!"
+    },
+    cheer: {
+      title: "Lời động viên tinh thần từ Nhà trường & Cố vấn",
+      type: "mentor",
+      message: "Chào em, giai đoạn thực tập này là cơ hội lớn để em rèn luyện bản lĩnh và tích lũy kinh nghiệm. Thầy/Cô và nhà trường luôn đồng hành, chúc em một ca làm việc an toàn và tràn đầy năng lượng!"
+    }
+  };
+
+  function openInterventionModal(userId) {
+    const user = STATE.students.find(s => s.id === userId) || {};
+    const name = user.full_name || 'Sinh viên';
+
+    // Populate student target card
+    const elUserId = document.getElementById('im-user-id');
+    const elName = document.getElementById('im-name');
+    const elAvatar = document.getElementById('im-avatar');
+    const elStudentId = document.getElementById('im-student-id');
+    const elPhase = document.getElementById('im-phase');
+    const elWorkplace = document.getElementById('im-workplace');
+    const elStress = document.getElementById('im-stress-pill');
+    const elSleep = document.getElementById('im-sleep-pill');
+    const elStreak = document.getElementById('im-streak-pill');
+
+    if (elUserId) elUserId.value = user.id || userId;
+    if (elName) elName.textContent = name;
+    if (elAvatar) elAvatar.textContent = name.charAt(0);
+    if (elStudentId) elStudentId.textContent = user.student_id || 'Chưa có MSSV';
+    
+    const phaseMap = {
+      preparation: 'Giai đoạn 1: Chuẩn bị',
+      adaptation: 'Giai đoạn 2: Hòa nhập',
+      sustain: 'Giai đoạn 3: Duy trì'
+    };
+    if (elPhase) elPhase.textContent = phaseMap[user.current_phase] || 'Chưa phân giai đoạn';
+    
+    const shiftMap = {
+      night_12h: 'Ca đêm (20h-8h)',
+      day_12h: 'Ca ngày (8h-20h)',
+      office_8h: 'Hành chính (8h-17h)'
+    };
+    const workplaceText = `${(user.company_id && user.company_name) ? user.company_name : 'Chưa chọn nơi thực tập'} • ${shiftMap[user.work_shift] || 'Chưa có ca làm'}`;
+    if (elWorkplace) elWorkplace.textContent = workplaceText;
+
+    const stressText = (user.latest_stress_level !== null && user.latest_stress_level !== undefined)
+      ? `Stress: <strong>${user.latest_stress_level}/5</strong>`
+      : 'Stress: <strong>Chưa có</strong>';
+    if (elStress) elStress.innerHTML = stressText;
+
+    const sleepText = (user.latest_sleep_hours !== null && user.latest_sleep_hours !== undefined)
+      ? `Giấc ngủ: <strong>${user.latest_sleep_hours}h</strong>`
+      : 'Giấc ngủ: <strong>Chưa có</strong>';
+    if (elSleep) elSleep.innerHTML = sleepText;
+
+    if (elStreak) elStreak.innerHTML = `Streak: <strong>${user.current_streak || 0} ngày</strong>`;
+
+    // Chọn lời khuyên mặc định thông minh theo chỉ số sức khỏe của sinh viên
+    const defaultTemplate = (user.latest_sleep_hours !== null && user.latest_sleep_hours < 5)
+      ? INTERVENTION_TEMPLATES.sleep
+      : ((user.latest_stress_level !== null && user.latest_stress_level >= 4)
+          ? INTERVENTION_TEMPLATES.stress
+          : INTERVENTION_TEMPLATES.cheer);
+
+    document.getElementById('im-title').value = defaultTemplate.title;
+    document.getElementById('im-type').value = defaultTemplate.type;
+    document.getElementById('im-message').value = defaultTemplate.message;
+    document.getElementById('im-char-count').textContent = `${defaultTemplate.message.length}/500 ký tự`;
+
+    document.querySelectorAll('.quick-template-chip').forEach(c => c.classList.remove('active'));
+
+    if (DOM.interventionModal) {
+      DOM.interventionModal.classList.add('open');
+    }
+  }
+
+  // Lắng nghe chọn mẫu lời khuyên nhanh
+  document.querySelectorAll('.quick-template-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.quick-template-chip').forEach(c => c.classList.remove('active'));
+      btn.classList.add('active');
+      const tKey = btn.dataset.template;
+      const tpl = INTERVENTION_TEMPLATES[tKey];
+      if (tpl) {
+        document.getElementById('im-title').value = tpl.title;
+        document.getElementById('im-type').value = tpl.type;
+        document.getElementById('im-message').value = tpl.message;
+        document.getElementById('im-char-count').textContent = `${tpl.message.length}/500 ký tự`;
+      }
+    });
+  });
+
+  const imTextarea = document.getElementById('im-message');
+  if (imTextarea) {
+    imTextarea.addEventListener('input', () => {
+      document.getElementById('im-char-count').textContent = `${imTextarea.value.length}/500 ký tự`;
+    });
+  }
+
+  // Xử lý gửi Form Can Thiệp Tâm Lý
+  if (DOM.interventionForm) {
+    DOM.interventionForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const userId = document.getElementById('im-user-id').value;
+      const title = document.getElementById('im-title').value.trim();
+      const message = document.getElementById('im-message').value.trim();
+      const interventionType = document.getElementById('im-type').value;
+      const priority = document.getElementById('im-priority').value;
+
+      const user = STATE.students.find(s => s.id === userId);
+      const studentName = user ? user.full_name : 'sinh viên';
+
+      showToast(`Đang gửi can thiệp tâm lý tới ${studentName}...`, 'info');
+
+      const res = await apiFetch('/admin/interventions', {
+        method: 'POST',
+        body: JSON.stringify({
+          user_id: userId,
+          title,
+          message,
+          intervention_type: interventionType,
+          priority
+        })
+      });
+
+      if (res && res.message) {
+        showToast(res.message, 'success');
+      } else {
+        showToast(`Đã gửi thông điệp can thiệp thành công tới ${studentName}!`, 'success');
+      }
+
+      DOM.interventionModal.classList.remove('open');
+    });
+  }
+
+  // ─── Filter Pills Bar & Stat Mini Cards Listeners ─────────────────────────────
+  document.querySelectorAll('.filter-pills-bar .pill-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-pills-bar .pill-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      STATE.studentPillFilter = btn.dataset.pill;
+
+      // Đồng bộ trạng thái active với stat mini cards
+      document.querySelectorAll('.students-stat-strip .stat-mini-card').forEach(card => {
+        if (card.dataset.pillFilter === STATE.studentPillFilter) {
+          card.classList.add('active');
+        } else {
+          card.classList.remove('active');
+        }
+      });
+      renderStudentsTable();
+    });
+  });
+
+  document.querySelectorAll('.students-stat-strip .stat-mini-card').forEach(card => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.students-stat-strip .stat-mini-card').forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+      STATE.studentPillFilter = card.dataset.pillFilter;
+
+      // Đồng bộ trạng thái active với pill buttons
+      document.querySelectorAll('.filter-pills-bar .pill-btn').forEach(btn => {
+        if (btn.dataset.pill === STATE.studentPillFilter) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+      renderStudentsTable();
+    });
   });
 
   // ─── Quick Event Listeners ────────────────────────────────────────────────────
@@ -1421,6 +2182,19 @@
     DOM.sidebar.classList.toggle('mobile-open');
   });
 
+  if (DOM.sidebarToggleBtn) {
+    DOM.sidebarToggleBtn.addEventListener('click', () => {
+      DOM.sidebar.classList.toggle('collapsed');
+      const isCollapsed = DOM.sidebar.classList.contains('collapsed');
+      localStorage.setItem('enigma_sidebar_collapsed', isCollapsed ? '1' : '0');
+    });
+  }
+
+  // Khôi phục trạng thái thu gọn menu nếu đã lưu trước đó
+  if (localStorage.getItem('enigma_sidebar_collapsed') === '1') {
+    DOM.sidebar.classList.add('collapsed');
+  }
+
   DOM.taskPhaseSwitcher.querySelectorAll('button').forEach(btn => {
     btn.addEventListener('click', () => {
       DOM.taskPhaseSwitcher.querySelectorAll('button').forEach(b => b.classList.remove('active'));
@@ -1434,19 +2208,354 @@
   DOM.studentsFilterPhase.addEventListener('change', renderStudentsTable);
   DOM.studentsFilterRisk.addEventListener('change', renderStudentsTable);
 
+  if (DOM.studentsFilterUniversity) {
+    DOM.studentsFilterUniversity.addEventListener('change', (e) => {
+      STATE.selectedUniversity = e.target.value;
+      renderUniversityChips();
+      renderStudentsTable();
+    });
+  }
+
+  if (DOM.studentsFilterCompany) {
+    DOM.studentsFilterCompany.addEventListener('change', (e) => {
+      STATE.selectedCompany = e.target.value;
+      renderStudentsTable();
+    });
+  }
+
+  if (DOM.viewModeGroupedBtn && DOM.viewModeFlatBtn) {
+    DOM.viewModeGroupedBtn.addEventListener('click', () => {
+      STATE.studentsViewMode = 'grouped';
+      localStorage.setItem('enigma_students_view_mode', 'grouped');
+      DOM.viewModeGroupedBtn.classList.add('active');
+      DOM.viewModeFlatBtn.classList.remove('active');
+      renderStudentsTable();
+    });
+
+    DOM.viewModeFlatBtn.addEventListener('click', () => {
+      STATE.studentsViewMode = 'flat';
+      localStorage.setItem('enigma_students_view_mode', 'flat');
+      DOM.viewModeFlatBtn.classList.add('active');
+      DOM.viewModeGroupedBtn.classList.remove('active');
+      renderStudentsTable();
+    });
+  }
+
+  if (DOM.btnToggleAllGroups) {
+    DOM.btnToggleAllGroups.addEventListener('click', () => {
+      window.EnigmaApp.toggleAllGroups();
+    });
+  }
+
   DOM.handbookSearchInput.addEventListener('input', renderHandbookArticles);
   DOM.handbookFilterCategory.addEventListener('change', renderHandbookArticles);
   DOM.handbookFilterStatus.addEventListener('change', renderHandbookArticles);
+
+  // ─── Pending Catalog Management ───────────────────────────────────────────────
+  async function loadPendingCatalog() {
+    const [pendingRes, approvedUnis, approvedComps] = await Promise.all([
+      apiFetch('/admin/catalog/pending'),
+      apiFetch('/catalog/universities?limit=50'),
+      apiFetch('/catalog/companies?limit=50')
+    ]);
+
+    const items = Array.isArray(pendingRes) ? pendingRes : (pendingRes && pendingRes.items ? pendingRes.items : []);
+    STATE.pendingCatalog = items;
+
+    // Cache approved targets for merge dropdown
+    STATE.approvedUniversities = Array.isArray(approvedUnis) ? approvedUnis : [];
+    STATE.approvedCompanies = Array.isArray(approvedComps) ? approvedComps : [];
+
+    // Fallback if approved lists are empty: harvest from STATE.students
+    if (STATE.approvedUniversities.length === 0 && STATE.students.length > 0) {
+      const uniMap = new Map();
+      STATE.students.forEach(s => {
+        if (s.university_id && s.university_name && s.university_name !== 'Chưa phân loại') {
+          uniMap.set(s.university_id, { id: s.university_id, name: s.university_name, short_name: s.university_short_name });
+        }
+      });
+      STATE.approvedUniversities = Array.from(uniMap.values());
+    }
+
+    if (STATE.approvedCompanies.length === 0 && STATE.students.length > 0) {
+      const compMap = new Map();
+      STATE.students.forEach(s => {
+        if (s.company_id && s.company_name && s.company_name !== 'Chưa chọn nơi thực tập') {
+          compMap.set(s.company_id, { id: s.company_id, name: s.company_name });
+        }
+      });
+      STATE.approvedCompanies = Array.from(compMap.values());
+    }
+
+    // Update counters & badge
+    const totalCount = items.length;
+    const uniCount = items.filter(it => it.type === 'university').length;
+    const compCount = items.filter(it => it.type === 'company').length;
+
+    if (DOM.navBadgePending) {
+      DOM.navBadgePending.textContent = totalCount;
+      DOM.navBadgePending.style.display = totalCount > 0 ? 'inline-flex' : 'none';
+    }
+
+    const elTotal = document.getElementById('pending-count-total');
+    const elUni = document.getElementById('pending-count-uni');
+    const elComp = document.getElementById('pending-count-comp');
+    if (elTotal) elTotal.textContent = totalCount;
+    if (elUni) elUni.textContent = uniCount;
+    if (elComp) elComp.textContent = compCount;
+
+    renderPendingCatalog();
+  }
+
+  function renderPendingCatalog() {
+    const tbody = document.getElementById('pending-tbody');
+    if (!tbody) return;
+
+    const search = DOM.pendingSearchInput ? DOM.pendingSearchInput.value.toLowerCase().trim() : '';
+    const typeFilter = DOM.pendingFilterType ? DOM.pendingFilterType.value : '';
+
+    const items = (STATE.pendingCatalog || []).filter(item => {
+      if (typeFilter && item.type !== typeFilter) return false;
+      if (search) {
+        const name = (item.name || '').toLowerCase();
+        const code = (item.code || '').toLowerCase();
+        const shortName = (item.short_name || '').toLowerCase();
+        const subName = (item.submitted_by && item.submitted_by.full_name ? item.submitted_by.full_name : '').toLowerCase();
+        const subEmail = (item.submitted_by && item.submitted_by.email ? item.submitted_by.email : '').toLowerCase();
+        return name.includes(search) || code.includes(search) || shortName.includes(search) || subName.includes(search) || subEmail.includes(search);
+      }
+      return true;
+    });
+
+    if (items.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" class="text-center py-8">
+            <div style="padding: 2.5rem 1rem; color: var(--text-muted);">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="margin: 0 auto 0.75rem auto; opacity: 0.5;">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M9 12l2 2 4-4"/>
+              </svg>
+              <h4 style="font-weight: 600; margin-bottom: 0.25rem;">Không có mục nào đang chờ duyệt</h4>
+              <p style="font-size: 0.825rem;">Tất cả các trường đại học và nơi thực tập do sinh viên đề xuất đã được xử lý hoàn tất.</p>
+            </div>
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = items.map(item => {
+      const isUni = item.type === 'university';
+      const typeBadge = isUni
+        ? `<span class="badge badge-primary"><span style="margin-right:4px;">🏛️</span>Trường ĐH</span>`
+        : `<span class="badge badge-info"><span style="margin-right:4px;">🏢</span>Nơi thực tập</span>`;
+
+      const approvedList = isUni ? STATE.approvedUniversities : STATE.approvedCompanies;
+      const optionsHtml = approvedList
+        .filter(target => target.id !== item.id)
+        .map(target => `<option value="${escapeHtml(target.id)}">${escapeHtml(target.name)}${target.short_name ? ' (' + escapeHtml(target.short_name) + ')' : ''}</option>`)
+        .join('');
+
+      const submitterHtml = item.submitted_by
+        ? `<strong>${escapeHtml(item.submitted_by.full_name || 'Sinh viên')}</strong><br><small class="text-subtle">${escapeHtml(item.submitted_by.email || '')}</small>`
+        : `<span class="text-subtle">Hệ thống / Ẩn danh</span>`;
+
+      let createdDate = '—';
+      if (item.created_at) {
+        try {
+          const d = new Date(item.created_at);
+          createdDate = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        } catch (_) {
+          createdDate = item.created_at;
+        }
+      }
+
+      const userCount = item.user_count !== undefined ? item.user_count : (item.count || 0);
+
+      return `
+        <tr>
+          <td>${typeBadge}</td>
+          <td>
+            <strong>${escapeHtml(item.name)}</strong>
+            <small class="text-subtle" style="display: block; margin-top: 2px;">Mã: ${escapeHtml(item.code || 'USER-XX')}${item.short_name ? ' · Viết tắt: ' + escapeHtml(item.short_name) : ''}</small>
+          </td>
+          <td>${submitterHtml}</td>
+          <td><span class="text-subtle" style="font-size: 0.8rem;">${escapeHtml(createdDate)}</span></td>
+          <td class="text-center">
+            <span class="badge ${userCount > 0 ? 'badge-primary' : 'badge-subtle'}">${userCount} SV</span>
+          </td>
+          <td class="text-right">
+            <div style="display: flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap;">
+              <button type="button" class="btn btn-sm btn-success" title="Phê duyệt đơn vị này vào danh mục chính thức" onclick="window.EnigmaApp.reviewCatalog('${escapeHtml(item.type)}', '${escapeHtml(item.id)}', 'approve')">
+                ✓ Duyệt
+              </button>
+
+              <div style="display: inline-flex; gap: 3px; align-items: center;">
+                <select id="merge-target-${escapeHtml(item.id)}" class="select-control select-sm" style="max-width: 140px;" title="Chọn đơn vị chuẩn hóa để gộp vào">
+                  <option value="">Gộp vào...</option>
+                  ${optionsHtml}
+                </select>
+                <button type="button" class="btn btn-sm btn-secondary" title="Gộp các sinh viên sang đơn vị chuẩn hóa và xóa mục này" onclick="window.EnigmaApp.reviewCatalog('${escapeHtml(item.type)}', '${escapeHtml(item.id)}', 'merge')">
+                  Gộp
+                </button>
+              </div>
+
+              <button type="button" class="btn btn-sm btn-danger-outline" title="Từ chối đề xuất và gỡ liên kết sinh viên" onclick="window.EnigmaApp.reviewCatalog('${escapeHtml(item.type)}', '${escapeHtml(item.id)}', 'reject')">
+                ✕ Từ chối
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  async function reviewCatalog(type, id, action) {
+    const item = (STATE.pendingCatalog || []).find(it => String(it.id) === String(id));
+    const name = item ? item.name : (type === 'university' ? 'trường đại học' : 'nơi thực tập');
+    let targetCanonicalId = null;
+
+    if (action === 'merge') {
+      const selectEl = document.getElementById(`merge-target-${id}`);
+      targetCanonicalId = selectEl ? selectEl.value : '';
+      if (!targetCanonicalId) {
+        showToast('Vui lòng chọn đơn vị chuẩn hóa trong danh sách "Gộp vào..." trước khi thực hiện.', 'warning');
+        return;
+      }
+      const targetName = selectEl.options[selectEl.selectedIndex].text;
+      const ok = window.confirm(
+        `Xác nhận GỘP ĐƠN VỊ:\n\n` +
+        `Bạn có chắc chắn muốn gộp "${name}" vào "${targetName}"?\n\n` +
+        `Tất cả sinh viên đang liên kết với "${name}" sẽ được chuyển sang "${targetName}". Mục chờ duyệt này sẽ được xóa vĩnh viễn.`
+      );
+      if (!ok) return;
+    } else if (action === 'reject') {
+      const ok = window.confirm(
+        `Xác nhận TỪ CHỐI ĐỀ XUẤT:\n\n` +
+        `Bạn có chắc chắn muốn từ chối đề xuất "${name}"?\n\n` +
+        `Mục đề xuất sẽ bị xóa và các sinh viên đang liên kết sẽ được đặt về trạng thái "Chưa phân loại".`
+      );
+      if (!ok) return;
+    } else if (action === 'approve') {
+      const ok = window.confirm(`Xác nhận PHÊ DUYỆT:\n\nPhê duyệt "${name}" thành đơn vị chính thức trong hệ thống?`);
+      if (!ok) return;
+    }
+
+    showToast(`Đang xử lý ${action === 'approve' ? 'phê duyệt' : (action === 'merge' ? 'gộp' : 'từ chối')}...`, 'info');
+
+    const res = await apiFetch('/admin/catalog/review', {
+      method: 'POST',
+      body: JSON.stringify({
+        entity_type: type,
+        entity_id: id,
+        action: action,
+        target_canonical_id: targetCanonicalId || null
+      })
+    });
+
+    if (res && res.message) {
+      showToast(res.message, 'success');
+      // Refresh pending catalog
+      await loadPendingCatalog();
+
+      // Refresh student list after action as required
+      const updatedStudents = await apiFetch('/admin/users');
+      if (updatedStudents) {
+        STATE.students = updatedStudents;
+        renderStudentsTable();
+        updateBadges();
+      }
+    }
+  }
+
+  // Listeners for pending review controls
+  if (DOM.pendingSearchInput) {
+    DOM.pendingSearchInput.addEventListener('input', renderPendingCatalog);
+  }
+  if (DOM.pendingFilterType) {
+    DOM.pendingFilterType.addEventListener('change', renderPendingCatalog);
+  }
+  if (DOM.btnRefreshPending) {
+    DOM.btnRefreshPending.addEventListener('click', () => {
+      showToast('Đang tải lại danh mục chờ duyệt...', 'info');
+      loadPendingCatalog();
+    });
+  }
+
+  const statPendingAll = document.getElementById('stat-pending-all');
+  const statPendingUni = document.getElementById('stat-pending-uni');
+  const statPendingComp = document.getElementById('stat-pending-comp');
+
+  if (statPendingAll && DOM.pendingFilterType) {
+    statPendingAll.addEventListener('click', () => {
+      DOM.pendingFilterType.value = '';
+      statPendingAll.classList.add('active');
+      if (statPendingUni) statPendingUni.classList.remove('active');
+      if (statPendingComp) statPendingComp.classList.remove('active');
+      renderPendingCatalog();
+    });
+  }
+  if (statPendingUni && DOM.pendingFilterType) {
+    statPendingUni.addEventListener('click', () => {
+      DOM.pendingFilterType.value = 'university';
+      statPendingUni.classList.add('active');
+      if (statPendingAll) statPendingAll.classList.remove('active');
+      if (statPendingComp) statPendingComp.classList.remove('active');
+      renderPendingCatalog();
+    });
+  }
+  if (statPendingComp && DOM.pendingFilterType) {
+    statPendingComp.addEventListener('click', () => {
+      DOM.pendingFilterType.value = 'company';
+      statPendingComp.classList.add('active');
+      if (statPendingAll) statPendingAll.classList.remove('active');
+      if (statPendingUni) statPendingUni.classList.remove('active');
+      renderPendingCatalog();
+    });
+  }
 
   // ─── Public Window API for inline onclick handlers ───────────────────────────
   window.EnigmaApp = {
     openUserDetail,
     openIntervention: (userId) => {
-      const user = STATE.students.find(s => s.id === userId);
-      const name = user ? user.full_name : 'sinh viên';
-      const advice = prompt(`Gửi tin nhắn can thiệp khẩn tới ${name}:`, `Chào bạn, Cố vấn thực tập đã nhận được thông tin ghi chú tâm trạng của bạn. Hãy liên hệ với Cố vấn qua số 0988.xxx.xxx hoặc phòng y tế nhé!`);
-      if (advice) {
-        showToast(`Đã gửi tin nhắn can thiệp tâm lý tới ${name}!`, 'success');
+      openInterventionModal(userId);
+    },
+    toggleUniGroup: (groupSlug) => {
+      const card = document.getElementById(`uni-group-${groupSlug}`);
+      if (!card) return;
+      if (card.classList.contains('collapsed')) {
+        card.classList.remove('collapsed');
+        STATE.collapsedUniGroups.delete(groupSlug);
+      } else {
+        card.classList.add('collapsed');
+        STATE.collapsedUniGroups.add(groupSlug);
+      }
+    },
+    selectUniPill: (uniName) => {
+      STATE.selectedUniversity = uniName;
+      if (DOM.studentsFilterUniversity) {
+        DOM.studentsFilterUniversity.value = uniName;
+      }
+      renderUniversityChips();
+      renderStudentsTable();
+    },
+    toggleAllGroups: () => {
+      const cards = document.querySelectorAll('.uni-group-card');
+      if (!cards.length) return;
+      STATE.allGroupsCollapsed = !STATE.allGroupsCollapsed;
+      cards.forEach(card => {
+        const slug = card.id.replace('uni-group-', '');
+        if (STATE.allGroupsCollapsed) {
+          card.classList.add('collapsed');
+          STATE.collapsedUniGroups.add(slug);
+        } else {
+          card.classList.remove('collapsed');
+          STATE.collapsedUniGroups.delete(slug);
+        }
+      });
+      if (DOM.btnToggleAllText) {
+        DOM.btnToggleAllText.textContent = STATE.allGroupsCollapsed ? 'Mở Rộng Tất Cả' : 'Thu Gọn Tất Cả';
       }
     },
     editArticle: (artId) => {
@@ -1483,12 +2592,90 @@
       document.getElementById('task-desc').value = task.description || '';
       document.getElementById('task-modal-title').textContent = 'Chỉnh Sửa Nhiệm Vụ Thích Nghi';
       DOM.taskModal.classList.add('open');
-    }
+    },
+    reviewCatalog
   };
+
+  // ─── Login Form Submission Handler ───────────────────────────────────────────
+  if (DOM.loginForm) {
+    DOM.loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = (DOM.loginEmail ? DOM.loginEmail.value : '').trim();
+      const password = (DOM.loginPassword ? DOM.loginPassword.value : '').trim();
+
+      if (!email || !password) {
+        if (DOM.loginError) {
+          DOM.loginError.textContent = 'Vui lòng nhập đầy đủ email và mật khẩu.';
+          DOM.loginError.style.display = 'block';
+        }
+        return;
+      }
+
+      if (DOM.btnLoginSubmit) {
+        DOM.btnLoginSubmit.disabled = true;
+        DOM.btnLoginSubmit.innerHTML = '<span>Đang xác thực...</span>';
+      }
+      if (DOM.loginError) DOM.loginError.style.display = 'none';
+
+      try {
+        const resp = await fetch(`${STATE.apiBaseUrl}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+
+        const data = await resp.json().catch(() => ({}));
+
+        if (!resp.ok) {
+          const msg = data.detail || 'Email hoặc mật khẩu không chính xác.';
+          if (DOM.loginError) {
+            DOM.loginError.textContent = msg;
+            DOM.loginError.style.display = 'block';
+          }
+          return;
+        }
+
+        const userRole = (data.user && data.user.role) ? (data.user.role.value || data.user.role) : '';
+        if (userRole !== 'admin') {
+          if (DOM.loginError) {
+            DOM.loginError.textContent = `Tài khoản (${data.user.email}) có phân quyền sinh viên, không có quyền quản trị viên. Vui lòng đăng nhập bằng tài khoản Admin.`;
+            DOM.loginError.style.display = 'block';
+          }
+          return;
+        }
+
+        // Lưu JWT token của tài khoản admin
+        localStorage.setItem('enigma_admin_token', data.access_token);
+        localStorage.setItem('enigma_admin_user', JSON.stringify(data.user));
+        STATE.adminToken = data.access_token;
+
+        updateAdminProfileUI();
+        hideLoginScreen();
+        showToast(`Đăng nhập thành công! Xin chào ${data.user.full_name || data.user.email}`, 'success');
+        await loadAllData();
+      } catch (err) {
+        if (DOM.loginError) {
+          DOM.loginError.textContent = `Không thể kết nối tới máy chủ (${err.message}). Vui lòng thử lại.`;
+          DOM.loginError.style.display = 'block';
+        }
+      } finally {
+        if (DOM.btnLoginSubmit) {
+          DOM.btnLoginSubmit.disabled = false;
+          DOM.btnLoginSubmit.innerHTML = '<span>Đăng Nhập Quản Trị</span>';
+        }
+      }
+    });
+  }
 
   // ─── Initialize App on Page Load ──────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
-    loadAllData();
+    if (!STATE.adminToken) {
+      showLoginScreen();
+    } else {
+      updateAdminProfileUI();
+      hideLoginScreen();
+      loadAllData();
+    }
   });
 
 })();

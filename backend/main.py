@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, users, checkins, journals, tasks, chat, handbook, admin, life_logs, notifications
+from app.api.routes import auth, users, checkins, journals, tasks, chat, handbook, admin, life_logs, notifications, workplace, catalog
+from app.api.routes.admin import get_authed_admin
 from app.db.database import create_tables
 from app.core.config import settings
 
@@ -84,12 +85,35 @@ app.include_router(tasks.router,     prefix="/tasks",     tags=["Tasks"])
 app.include_router(chat.router,          prefix="/chat",          tags=["AI Chat"])
 app.include_router(handbook.router,      prefix="/handbook",      tags=["Handbook"])
 app.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
-app.include_router(admin.router,         prefix="/admin",         tags=["Admin"])
+app.include_router(workplace.router,     prefix="/workplace",     tags=["Workplace & Geofence"])
+app.include_router(catalog.router,       prefix="/catalog",       tags=["Catalog"])
+app.include_router(admin.router,         prefix="/admin",         tags=["Admin"], dependencies=[Depends(get_authed_admin)])
+
+# Root-level convenience alias for user profile catalog update
+from app.schemas.catalog import ProfileCatalogUpdateResponse
+app.add_api_route(
+    "/me/profile",
+    users.update_my_catalog_profile,
+    methods=["PUT"],
+    response_model=ProfileCatalogUpdateResponse,
+    tags=["Users"],
+    summary="Cập nhật trường học và công ty thực tập theo Catalog (alias)",
+)
 
 
 @app.get("/", tags=["Health"])
 async def root():
     return {"status": "ok", "message": "Enigma API is running"}
+
+
+
+# Mount Admin Web Portal nếu thư mục tồn tại
+import os
+from fastapi.staticfiles import StaticFiles
+
+admin_web_dir = os.path.join(os.path.dirname(__file__), "admin_web")
+if os.path.exists(admin_web_dir):
+    app.mount("/admin-web", StaticFiles(directory=admin_web_dir, html=True), name="admin_web")
 
 
 if __name__ == "__main__":

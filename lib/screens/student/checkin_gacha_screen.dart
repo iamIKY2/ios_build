@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../../state/app_state.dart';
 import '../../models/daily_checkin.dart';
 import '../../theme/app_theme.dart';
 import '../../core/api/life_log_repository.dart';
+import '../../core/services/workplace_service.dart';
 import '../../navigation/student_nav.dart';
 import 'phq4_screener_screen.dart';
 import '../../core/onboarding/models/feature_keys.dart';
@@ -20,10 +22,10 @@ class CheckinGachaScreen extends StatefulWidget {
   const CheckinGachaScreen({super.key, this.initialMood});
 
   @override
-  State<CheckinGachaScreen> createState() => _CheckinGachaScreenState();
+  State<CheckinGachaScreen> createState() => CheckinGachaScreenState();
 }
 
-class _CheckinGachaScreenState extends State<CheckinGachaScreen>
+class CheckinGachaScreenState extends State<CheckinGachaScreen>
     with TickerProviderStateMixin {
   // GlobalKeys for Feature Onboarding Tour
   final GlobalKey _moodKey = GlobalKey();
@@ -37,6 +39,10 @@ class _CheckinGachaScreenState extends State<CheckinGachaScreen>
   String? _gachaCategory;
   int _currentStreak = 0;
   int _longestStreak = 0;
+
+  // Workplace & Geofence State
+  WorkplaceProfile? _workplaceProfile;
+  WorkplaceStatus _workplaceStatus = WorkplaceStatus.unknown;
 
   // Mood selection state
   String _selectedMood = 'neutral';
@@ -144,6 +150,76 @@ class _CheckinGachaScreenState extends State<CheckinGachaScreen>
     _selectedMood = widget.initialMood?.apiKey ?? 'neutral';
     _initAnimations();
     _loadCheckinStatus();
+    _loadWorkplaceData();
+  }
+
+  Future<void> _loadWorkplaceData() async {
+    await WorkplaceService.instance.fetchCompanies();
+    final prof = await WorkplaceService.instance.fetchProfile();
+    final status = await WorkplaceService.instance.evaluateCurrentLocation(promptPermission: false);
+    if (mounted) {
+      setState(() {
+        _workplaceProfile = prof;
+        _workplaceStatus = status;
+      });
+    }
+  }
+
+  Future<void> _requestLocationAndUpdate() async {
+    final enabled = await Geolocator.isLocationServiceEnabled();
+    if (!enabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Định vị GPS trên máy đang tắt. Vui lòng bật định vị!'),
+            action: SnackBarAction(
+              label: 'Bật GPS',
+              onPressed: () => Geolocator.openLocationSettings(),
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.denied) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Vui lòng cấp quyền vị trí để tự động nhận diện công ty và trọ.')),
+        );
+      }
+      return;
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Quyền vị trí đã bị từ chối. Vui lòng mở Cài đặt để cấp quyền!'),
+            action: SnackBarAction(
+              label: 'Cài đặt',
+              onPressed: () => Geolocator.openAppSettings(),
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    final newStatus = await WorkplaceService.instance.evaluateCurrentLocation(promptPermission: true);
+    if (mounted) {
+      setState(() {
+        _workplaceStatus = newStatus;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã cập nhật vị trí làm việc thành công!')),
+      );
+    }
   }
 
   @override
@@ -221,6 +297,8 @@ class _CheckinGachaScreenState extends State<CheckinGachaScreen>
       }
     }
   }
+
+  void startTour({bool force = false}) => _startTour(force: force);
 
   void _startTour({bool force = false}) {
     FeatureTour.start(
@@ -300,14 +378,18 @@ class _CheckinGachaScreenState extends State<CheckinGachaScreen>
   }
 
   String _extractCategory(String message) {
-    if (message.contains('ngủ') || message.contains('Melatonin'))
+    if (message.contains('ngủ') || message.contains('Melatonin')) {
       return 'sleep_recovery';
-    if (message.contains('giãn cơ') || message.contains('nước'))
+    }
+    if (message.contains('giãn cơ') || message.contains('nước')) {
       return 'physical_stretch';
-    if (message.contains('Leader') || message.contains('Anh/Chị'))
+    }
+    if (message.contains('Leader') || message.contains('Anh/Chị')) {
       return 'social_connect';
-    if (message.contains('hít thở') || message.contains('Box Breathing'))
+    }
+    if (message.contains('hít thở') || message.contains('Box Breathing')) {
       return 'mental_peace';
+    }
     return 'motivation';
   }
 
@@ -346,6 +428,10 @@ class _CheckinGachaScreenState extends State<CheckinGachaScreen>
                   children: [
                     // Streak Hero Card
                     _buildStreakCard(),
+                    const SizedBox(height: 16),
+
+                    // Workplace & Smart Sleep Card
+                    _buildWorkplaceSleepCard(),
                     const SizedBox(height: 16),
 
                     // PHQ-4 Medical Screening Banner
@@ -402,6 +488,708 @@ class _CheckinGachaScreenState extends State<CheckinGachaScreen>
                 ),
               ),
             ),
+    );
+  }
+
+  Widget _buildWorkplaceSleepCard() {
+    final profile = _workplaceProfile;
+    final companyName = profile?.companyName ?? 'LG Display Hải Phòng';
+    final shift = profile?.workShift ?? 'day_12h';
+    final shiftLabel = shift == 'night_12h'
+        ? 'Ca đêm (20:00 – 08:00)'
+        : (shift == 'office_8h' ? 'Hành chính (08:30 – 17:30)' : 'Ca ngày (08:00 – 20:00)');
+    final estSleep = WorkplaceService.instance.calculateEstimatedSleepHours();
+
+    Color statusColor;
+    String statusText;
+    IconData statusIcon;
+
+    switch (_workplaceStatus) {
+      case WorkplaceStatus.atWorkplace:
+        statusColor = const Color(0xFF10B981);
+        statusText = 'Trong xưởng';
+        statusIcon = Icons.factory_rounded;
+        break;
+      case WorkplaceStatus.atDorm:
+        statusColor = const Color(0xFF38BDF8);
+        statusText = 'Tại trọ / KTX';
+        statusIcon = Icons.home_rounded;
+        break;
+      case WorkplaceStatus.outside:
+        statusColor = const Color(0xFFF59E0B);
+        statusText = 'Ngoài xưởng';
+        statusIcon = Icons.directions_walk_rounded;
+        break;
+      case WorkplaceStatus.unknown:
+        statusColor = Colors.grey;
+        statusText = 'Bật vị trí';
+        statusIcon = Icons.location_searching_rounded;
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceColor(context),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppTheme.borderColor(context)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.business_rounded,
+                  color: AppTheme.primary,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      companyName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14.5,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      shiftLabel,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: AppTheme.onSurfaceSecondary(context),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              InkWell(
+                onTap: _showWorkplaceSetupModal,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppTheme.primary.withValues(alpha: 0.2)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.tune_rounded, size: 14, color: AppTheme.primary),
+                      SizedBox(width: 4),
+                      Text(
+                        'Đổi ca',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: _workplaceStatus == WorkplaceStatus.unknown
+                      ? _requestLocationAndUpdate
+                      : null,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: statusColor.withValues(alpha: 0.25)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(statusIcon, size: 14, color: statusColor),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            statusText,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: statusColor,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.sleepColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppTheme.sleepColor.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.bedtime_rounded, size: 14, color: AppTheme.sleepColor),
+                      const SizedBox(width: 5),
+                      Flexible(
+                        child: Text(
+                          'Ngủ ~${estSleep.toStringAsFixed(1)}h',
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.sleepColor,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<WorkplaceCompany?> _showCompanyPicker(
+    BuildContext parentContext,
+    String currentSelection,
+    List<WorkplaceCompany> companiesList,
+  ) async {
+    return showModalBottomSheet<WorkplaceCompany>(
+      context: parentContext,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (pickerCtx) {
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(pickerCtx).size.height * 0.72,
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          decoration: BoxDecoration(
+            color: AppTheme.surfaceColor(parentContext),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Chọn Công Ty Thực Tập',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(pickerCtx),
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                    splashRadius: 20,
+                  ),
+                ],
+              ),
+              Text(
+                'Hệ thống nạp tọa độ GPS trạm xưởng để tự động nhận diện ca làm',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.onSurfaceSecondary(parentContext),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: companiesList.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (ctx, index) {
+                    final comp = companiesList[index];
+                    final isSelected = comp.name == currentSelection;
+                    return InkWell(
+                      onTap: () => Navigator.pop(pickerCtx, comp),
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? AppTheme.primary.withValues(alpha: 0.08)
+                              : Theme.of(parentContext).cardColor,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isSelected
+                                ? AppTheme.primary
+                                : AppTheme.borderColor(parentContext),
+                            width: isSelected ? 1.6 : 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(9),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? AppTheme.primary
+                                    : AppTheme.primary.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                comp.workplaceType == 'office'
+                                    ? Icons.computer_rounded
+                                    : (comp.workplaceType == 'custom'
+                                        ? Icons.tune_rounded
+                                        : Icons.factory_rounded),
+                                color: isSelected ? Colors.white : AppTheme.primary,
+                                size: 18,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    comp.name,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13.5,
+                                      color: isSelected ? AppTheme.primary : null,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    comp.address,
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      color: AppTheme.onSurfaceSecondary(parentContext),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            if (isSelected)
+                              const Icon(
+                                Icons.check_circle_rounded,
+                                color: AppTheme.primary,
+                                size: 20,
+                              )
+                            else
+                              Icon(
+                                Icons.radio_button_unchecked_rounded,
+                                color: Colors.grey.withValues(alpha: 0.35),
+                                size: 20,
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showWorkplaceSetupModal() {
+    final companies = WorkplaceService.instance.companies;
+    String selectedComp = _workplaceProfile?.companyName ?? (companies.isNotEmpty ? companies.first.name : 'LG Display Hải Phòng');
+    String selectedShift = _workplaceProfile?.workShift ?? 'day_12h';
+    double? dormLat = _workplaceProfile?.dormLat;
+    double? dormLng = _workplaceProfile?.dormLng;
+    bool isSaving = false;
+    bool isLocatingDorm = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (modalCtx, setModalState) {
+          WorkplaceCompany? currentCompany;
+          try {
+            currentCompany = companies.firstWhere((c) => c.name == selectedComp);
+          } catch (_) {
+            currentCompany = companies.isNotEmpty ? companies.first : null;
+          }
+
+          return Container(
+            padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(modalCtx).viewInsets.bottom + 24),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceColor(context),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Thiết lập Môi trường & Ca làm việc',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Chọn công ty để tự động nạp tọa độ GPS và nhận diện lịch làm việc',
+                  style: TextStyle(fontSize: 12.5, color: AppTheme.onSurfaceSecondary(context)),
+                ),
+                const SizedBox(height: 18),
+                // Chọn Công ty
+                const Text('Công ty thực tập:', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                const SizedBox(height: 8),
+                InkWell(
+                  onTap: () async {
+                    final chosen = await _showCompanyPicker(context, selectedComp, companies);
+                    if (chosen != null) {
+                      setModalState(() {
+                        selectedComp = chosen.name;
+                        // Tự động gán ca mặc định nếu ca hiện tại không phù hợp với công ty mới
+                        if (chosen.availableShifts.isNotEmpty &&
+                            !chosen.availableShifts.any((s) => s['id'] == selectedShift)) {
+                          selectedShift = chosen.defaultShift;
+                        }
+                      });
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: AppTheme.borderColor(context),
+                        width: 1.2,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.apartment_rounded,
+                            color: AppTheme.primary,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                selectedComp,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13.5,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                currentCompany?.address ?? 'Chạm để chọn công ty thực tập',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: AppTheme.onSurfaceSecondary(context),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primary.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Đổi',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppTheme.primary,
+                                ),
+                              ),
+                              SizedBox(width: 2),
+                              Icon(
+                                Icons.keyboard_arrow_right_rounded,
+                                size: 16,
+                                color: AppTheme.primary,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Chọn Ca làm
+                const Text('Lịch ca kíp của bạn:', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    _buildShiftChoiceChip('day_12h', '☀️ Ca ngày\n(8h-20h)', selectedShift, (val) => setModalState(() => selectedShift = val)),
+                    const SizedBox(width: 8),
+                    _buildShiftChoiceChip('night_12h', '🌙 Ca đêm\n(20h-8h)', selectedShift, (val) => setModalState(() => selectedShift = val)),
+                    const SizedBox(width: 8),
+                    _buildShiftChoiceChip('office_8h', '💼 Hành chính\n(8h-17h)', selectedShift, (val) => setModalState(() => selectedShift = val)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Nút gán vị trí phòng trọ
+                OutlinedButton.icon(
+                  onPressed: (isSaving || isLocatingDorm) ? null : () async {
+                    setModalState(() => isLocatingDorm = true);
+                    try {
+                      // 1. Kiểm tra GPS thiết bị
+                      final isGpsOn = await Geolocator.isLocationServiceEnabled();
+                      if (!isGpsOn) {
+                        if (modalCtx.mounted) {
+                          ScaffoldMessenger.of(modalCtx).showSnackBar(
+                            SnackBar(
+                              content: const Text('Định vị GPS đang tắt. Vui lòng bật GPS trên máy!'),
+                              action: SnackBarAction(
+                                label: 'Bật GPS',
+                                onPressed: () => Geolocator.openLocationSettings(),
+                              ),
+                            ),
+                          );
+                        }
+                        return;
+                      }
+
+                      // 2. Kiểm tra & xin quyền định vị
+                      LocationPermission perm = await Geolocator.checkPermission();
+                      if (perm == LocationPermission.denied) {
+                        perm = await Geolocator.requestPermission();
+                      }
+
+                      if (perm == LocationPermission.denied) {
+                        if (modalCtx.mounted) {
+                          ScaffoldMessenger.of(modalCtx).showSnackBar(
+                            const SnackBar(content: Text('Vui lòng cấp quyền vị trí để ứng dụng lưu tọa độ phòng trọ!')),
+                          );
+                        }
+                        return;
+                      }
+
+                      if (perm == LocationPermission.deniedForever) {
+                        if (modalCtx.mounted) {
+                          ScaffoldMessenger.of(modalCtx).showSnackBar(
+                            SnackBar(
+                              content: const Text('Quyền vị trí đã bị từ chối. Vui lòng mở Cài đặt ứng dụng để cấp quyền!'),
+                              action: SnackBarAction(
+                                label: 'Cài đặt',
+                                onPressed: () => Geolocator.openAppSettings(),
+                              ),
+                            ),
+                          );
+                        }
+                        return;
+                      }
+
+                      // 3. Lấy vị trí GPS
+                      Position? pos;
+                      try {
+                        pos = await Geolocator.getCurrentPosition(
+                          desiredAccuracy: LocationAccuracy.high,
+                          timeLimit: const Duration(seconds: 8),
+                        );
+                      } catch (_) {
+                        pos = await Geolocator.getLastKnownPosition();
+                      }
+
+                      final foundPos = pos;
+                      if (foundPos != null) {
+                        setModalState(() {
+                          dormLat = foundPos.latitude;
+                          dormLng = foundPos.longitude;
+                        });
+                        if (modalCtx.mounted) {
+                          ScaffoldMessenger.of(modalCtx).showSnackBar(
+                            const SnackBar(content: Text('Đã gán vị trí hiện tại làm Phòng trọ/KTX!')),
+                          );
+                        }
+                      } else {
+                        if (modalCtx.mounted) {
+                          ScaffoldMessenger.of(modalCtx).showSnackBar(
+                            const SnackBar(content: Text('Không thể lấy tọa độ GPS lúc này. Vui lòng thử lại!')),
+                          );
+                        }
+                      }
+                    } catch (e) {
+                      if (modalCtx.mounted) {
+                        ScaffoldMessenger.of(modalCtx).showSnackBar(
+                          SnackBar(content: Text('Lỗi lấy vị trí: $e')),
+                        );
+                      }
+                    } finally {
+                      setModalState(() => isLocatingDorm = false);
+                    }
+                  },
+                  icon: isLocatingDorm
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.my_location_rounded, size: 16),
+                  label: Text(
+                    isLocatingDorm
+                        ? 'Đang lấy vị trí GPS...'
+                        : (dormLat != null
+                            ? '✅ Đã lưu vị trí trọ (${dormLat!.toStringAsFixed(3)}, ${dormLng!.toStringAsFixed(3)})'
+                            : '📍 Đặt vị trí này làm Phòng trọ của tôi'),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 42),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Submit Button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: isSaving ? null : () async {
+                      setModalState(() => isSaving = true);
+                      final success = await WorkplaceService.instance.updateProfile(
+                        companyName: selectedComp,
+                        workShift: selectedShift,
+                        dormLat: dormLat,
+                        dormLng: dormLng,
+                      );
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      if (success) {
+                        await _loadWorkplaceData();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Cập nhật hồ sơ thực tập thành công!')),
+                          );
+                        }
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: isSaving
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : const Text('Lưu Thay Đổi', style: TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildShiftChoiceChip(String id, String label, String currentVal, Function(String) onSelect) {
+    final isSelected = id == currentVal;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => onSelect(id),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? AppTheme.primary.withValues(alpha: 0.15) : AppTheme.surfaceColor(context),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: isSelected ? AppTheme.primary : AppTheme.borderColor(context)),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+                color: isSelected ? AppTheme.primary : AppTheme.onSurfaceSecondary(context),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -598,20 +1386,22 @@ class _CheckinGachaScreenState extends State<CheckinGachaScreen>
 
   Widget _buildMoodSelector() {
     return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Hôm nay bạn cảm thấy thế nào?',
-              style: Theme.of(context).textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: _moods.map((mood) {
-                final isSelected = _selectedMood == mood['key'];
-                final color = Color(mood['color'] as int);
-                return GestureDetector(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Hôm nay bạn cảm thấy thế nào?',
+          style: Theme.of(context).textTheme.titleMedium
+              ?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: _moods.map((mood) {
+            final isSelected = _selectedMood == mood['key'];
+            final color = Color(mood['color'] as int);
+            return Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                child: GestureDetector(
                   onTap: _isLoading
                       ? null
                       : () => setState(() {
@@ -624,12 +1414,12 @@ class _CheckinGachaScreenState extends State<CheckinGachaScreen>
                   child: AnimatedContainer(
                     duration: 200.ms,
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
+                      horizontal: 4,
                       vertical: 10,
                     ),
                     decoration: BoxDecoration(
                       color: isSelected
-                          ? color.withOpacity(0.2)
+                          ? color.withValues(alpha: 0.2)
                           : AppTheme.surfaceColor(context),
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(
@@ -638,35 +1428,54 @@ class _CheckinGachaScreenState extends State<CheckinGachaScreen>
                             : AppTheme.borderColor(context),
                         width: isSelected ? 2 : 1,
                       ),
+                      boxShadow: isSelected
+                          ? [
+                              BoxShadow(
+                                color: color.withValues(alpha: 0.25),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ]
+                          : null,
                     ),
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           mood['emoji'] as String,
-                          style: const TextStyle(fontSize: 26),
+                          style: const TextStyle(fontSize: 24),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          mood['label'] as String,
-                          style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w600,
-                            color: isSelected
-                                ? color
-                                : AppTheme.onSurfaceMuted(context),
+                        const SizedBox(height: 6),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            mood['label'] as String,
+                            maxLines: 1,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: isSelected
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: isSelected
+                                  ? color
+                                  : AppTheme.onSurfaceMuted(context),
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                );
-              }).toList(),
-            ),
-          ],
-        )
-        .animate()
-        .fadeIn(delay: 100.ms, duration: 400.ms)
-        .slideY(begin: 0.1, end: 0);
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    )
+    .animate()
+    .fadeIn(delay: 100.ms, duration: 400.ms)
+    .slideY(begin: 0.1, end: 0);
   }
 
   Widget _buildStressFactorSelector() {

@@ -60,12 +60,6 @@ async def create_tables():
             await conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS idx_user_feature_onboarding_user ON user_feature_onboardings (user_id)
             """))
-            await conn.execute(text("""
-                ALTER TABLE daily_checkins
-                    ADD COLUMN IF NOT EXISTS mood VARCHAR(20),
-                    ADD COLUMN IF NOT EXISTS stress_factors JSON,
-                    ADD COLUMN IF NOT EXISTS note TEXT
-            """))
             result = await conn.execute(text("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'"))
             count = result.scalar()
             print(f"[OK] Ket noi PostgreSQL thanh cong - {count} bang dang hoat dong trong database.")

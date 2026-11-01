@@ -69,9 +69,6 @@ class CheckinService:
         checkin = DailyCheckin(
             user_id=user_id,
             checkin_date=today,
-            mood=mood,
-            stress_factors=stress_factors or [],
-            note=note,
             gacha_message=gacha["message"],
             gacha_category=gacha["category"]
         )

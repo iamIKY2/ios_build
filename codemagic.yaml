@@ -14,6 +14,18 @@ workflows:
           set -euo pipefail
           flutter --version
           flutter pub get
+      - name: Analyze and test
+        script: |
+          set -euo pipefail
+          flutter analyze --no-pub
+          flutter test --no-pub
+      - name: Validate iOS configuration and install pods
+        script: |
+          set -euo pipefail
+          plutil -lint ios/Runner/Info.plist ios/Runner/Runner.entitlements ios/Flutter/AppFrameworkInfo.plist ios/Runner.xcodeproj/project.pbxproj
+          ruby -c ios/Podfile
+          cd ios
+          pod install --repo-update
       - name: Build iOS release without signing
         script: |
           set -euo pipefail

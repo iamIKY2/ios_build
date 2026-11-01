@@ -32,9 +32,6 @@ async def get_today_status(user=Depends(get_authed_user), db: AsyncSession = Dep
     streak = await CheckinService.get_user_streak(db, user.id)
     return {
         "has_checked_in": checkin is not None,
-        "mood": checkin.mood if checkin else None,
-        "stress_factors": checkin.stress_factors or [] if checkin else [],
-        "note": checkin.note if checkin else None,
         "gacha_message": checkin.gacha_message if checkin else None,
         "current_streak": streak.current_streak,
         "longest_streak": streak.longest_streak
@@ -58,9 +55,6 @@ async def perform_checkin(
     streak = res["streak"]
     return {
         "already_checked_in": res["already_checked_in"],
-        "mood": res["checkin"].mood,
-        "stress_factors": res["checkin"].stress_factors or [],
-        "note": res["checkin"].note,
         "gacha_message": res["gacha_message"],
         "current_streak": streak.current_streak,
         "longest_streak": streak.longest_streak,

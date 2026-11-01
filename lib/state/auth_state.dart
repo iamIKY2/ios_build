@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../models/user.dart';
 import '../core/utils/storage.dart';
 import '../core/constants/app_constants.dart';
 import '../core/api/api_client.dart';
 import '../core/services/sync_service.dart';
+import '../core/services/push_notification_service.dart';
 import '../core/onboarding/services/feature_onboarding_service.dart';
 import 'package:dio/dio.dart';
 
@@ -160,6 +163,7 @@ class AuthState extends ChangeNotifier {
           _user = User.fromJson(response.data['user']);
           await StorageUtil.saveCachedUser(_user!);
           _isOfflineMode = false;
+          PushNotificationService.syncTokenWithBackend();
         }
       }
     } on DioException catch (dioErr) {
@@ -223,6 +227,7 @@ class AuthState extends ChangeNotifier {
         _isOfflineMode = false;
         FeatureOnboardingService.instance.initForUser(_user?.id);
         SyncService.instance.syncPendingData();
+        PushNotificationService.syncTokenWithBackend();
       }
       return true;
     } on DioException catch (e) {
@@ -300,6 +305,18 @@ class AuthState extends ChangeNotifier {
         return true;
       }
 
+      // The native Google SDK raises an exception when its iOS client or
+      // callback scheme is missing. Check before entering the SDK.
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+        final configured = await const MethodChannel('enigma/ios_configuration')
+            .invokeMethod<bool>('isGoogleSignInConfigured');
+        if (configured != true) {
+          _error = 'Đăng nhập Google chưa được cấu hình trên iOS. '
+              'Vui lòng đăng nhập bằng email hoặc tiếp tục với tư cách khách.';
+          return false;
+        }
+      }
+
       // Đăng xuất phiên cũ nếu có để cho phép user chọn tài khoản
       try {
         await _googleSignIn.signOut();
@@ -331,7 +348,20 @@ class AuthState extends ChangeNotifier {
       _isOfflineMode = false;
       FeatureOnboardingService.instance.initForUser(_user?.id);
       SyncService.instance.syncPendingData();
+      PushNotificationService.syncTokenWithBackend();
       return true;
+    } on PlatformException catch (e, stack) {
+      debugPrint('Google Sign-In platform exception: $e\n$stack');
+      if (!kIsWeb &&
+          defaultTargetPlatform == TargetPlatform.android &&
+          RegExp(r'ApiException:\s*10(?:\D|$)').hasMatch(e.message ?? '')) {
+        _error = 'Đăng nhập Google chưa được cấu hình đúng cho bản Android này '
+            '(mã 10). Cần đăng ký SHA-1 của chứng chỉ ký APK và package name '
+            'trong Firebase/Google Cloud. Bạn có thể đăng nhập bằng email.';
+      } else {
+        _error = 'Đăng nhập Google thất bại: ${e.message ?? e.code}';
+      }
+      return false;
     } on DioException catch (e) {
       if (e.response?.data is Map && e.response?.data['detail'] != null) {
         final detail = e.response?.data['detail'];
@@ -388,6 +418,7 @@ class AuthState extends ChangeNotifier {
         _isOfflineMode = false;
         FeatureOnboardingService.instance.initForUser(_user?.id);
         SyncService.instance.syncPendingData();
+        PushNotificationService.syncTokenWithBackend();
       }
       return true;
     } on DioException catch (e) {

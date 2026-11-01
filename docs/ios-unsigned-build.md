@@ -31,8 +31,9 @@ thẳng lên TestFlight/App Store. Có thể giữ file để ký bằng công c
 
 - Flutter `3.47.5`, khớp SDK local của dự án (Dart `3.13.4`).
 - Máy `mac_mini_m2`, Xcode mới nhất do Codemagic cung cấp.
-- Dự án đã tích hợp Swift Package Manager; Flutter quản lý dependency iOS.
-  Không cần tự tạo Podfile trước khi chạy thử workflow.
+- Dự án dùng CocoaPods, có sẵn `ios/Podfile` và tắt Swift Package Manager riêng
+  trong `pubspec.yaml`. Workflow tự chạy `pod install --repo-update`.
+- Cấu hình Firebase, Google và ký ứng dụng: xem [ios-setup.md](ios-setup.md).
 
 Chưa có build macOS thực tế được chạy từ workspace Windows này. Nếu dịch vụ
 không cung cấp phiên bản SDK đã ghim hoặc build báo lỗi plugin/Xcode, cần xem log
