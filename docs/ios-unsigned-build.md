@@ -42,3 +42,34 @@ build để điều chỉnh; không hạ yêu cầu Dart trong `pubspec.yaml` ch
 Tài liệu:
 - https://docs.codemagic.io/yaml-quick-start/building-a-flutter-app/
 - https://docs.codemagic.io/yaml-basic-configuration/yaml-getting-started/
+
+## Màn hình trắng khi cài qua SideStore
+
+Workflow GitHub Actions `.github/workflows/ios-unsigned.yml` cũng build bằng
+`flutter build ios --release --no-codesign`. Hãy tải IPA từ lần chạy mới nhất
+trên nhánh có bản sửa, rồi cài lại qua SideStore để kiểm tra.
+
+App hiển thị giao diện khởi động trước khi đọc bộ nhớ thiết bị. Nếu bước bắt buộc
+này lỗi hoặc quá 15 giây, app hiện thông báo và nút **Thử lại**. Đồng bộ mạng,
+Firebase/push và nhắc nhở được khởi tạo sau khi giao diện app đã xuất hiện;
+các dịch vụ này không còn chặn `runApp`.
+
+Nếu cùng IPA chạy được trong LiveContainer nhưng trắng khi cài độc lập, chưa thể
+kết luận là lỗi JIT hay lỗi SideStore. LiveContainer có cơ chế tương thích riêng
+(Bundle ID, SDK behavior, signing). Cần kiểm tra bản cài độc lập:
+
+- Chỉ trắng, không thấy chữ **Enigma**: lấy device console từ lúc mở app, kiểm
+  tra native launch, Flutter engine và chữ ký/entitlements sau khi SideStore ký.
+- Hiện **Đang khởi động…** rồi nút **Thử lại**: tìm log `[Startup] Required
+  initialization failed` để kiểm tra SharedPreferences/plugin và bộ nhớ app.
+- Hiện splash có logo nhưng không chuyển trang: kiểm tra xác thực, Keychain và
+  kết nối API. Đây là giai đoạn sau khi khởi tạo giao diện.
+- Log `[Startup]`, `[FCM]`, `[ReminderService]` giúp phân biệt lỗi dịch vụ. Push
+  cần provisioning/entitlements APNs phù hợp; việc tạo IPA unsigned thành công
+  không xác nhận push sẽ hoạt động sau khi ký lại.
+
+Không cần xóa app/dữ liệu để thử bản sửa. Chưa xác minh bản cài SideStore trên
+thiết bị thực từ workspace Windows này.
+
+Tham khảo cơ chế tương thích của LiveContainer:
+https://livecontainer.github.io/docs/guides/app-settings

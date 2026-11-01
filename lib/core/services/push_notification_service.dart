@@ -109,7 +109,7 @@ class PushNotificationService {
       });
 
     } catch (e) {
-      debugPrint('[FCM] Init error (continuing in safe mode): ');
+      debugPrint('[FCM] Init error (continuing in safe mode): $e');
     }
   }
 
@@ -151,7 +151,7 @@ class PushNotificationService {
         await _sendTokenToBackend(token);
       }
     } catch (e) {
-      debugPrint('[FCM] Get token error: ');
+      debugPrint('[FCM] Get token error: $e');
     }
   }
 
