@@ -1,0 +1,60 @@
+name: Build iOS Unsigned IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Enigma unsigned IPA
+    runs-on: macos-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.5'
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          flutter --version
+          xcodebuild -version
+          flutter pub get
+
+      - name: Build iOS release without signing
+        run: |
+          set -euo pipefail
+          flutter build ios --release --no-codesign
+
+      - name: Package and verify unsigned IPA
+        run: |
+          set -euo pipefail
+          test -d build/ios/iphoneos/Runner.app
+          staging_dir="$(mktemp -d "$RUNNER_TEMP/enigma-ipa.XXXXXX")"
+          mkdir -p "$staging_dir/Payload" "$GITHUB_WORKSPACE/build/ios/ipa"
+          ditto build/ios/iphoneos/Runner.app "$staging_dir/Payload/Runner.app"
+          cd "$staging_dir"
+          /usr/bin/zip -qry "$GITHUB_WORKSPACE/build/ios/ipa/Enigma-unsigned.ipa" Payload
+          /usr/bin/unzip -t "$GITHUB_WORKSPACE/build/ios/ipa/Enigma-unsigned.ipa"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v7
+        with:
+          name: Enigma-unsigned-ipa
+          path: build/ios/ipa/Enigma-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
