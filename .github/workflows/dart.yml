@@ -2,19 +2,23 @@ name: Build iOS Unsigned IPA
 
 on:
   workflow_dispatch:
+    inputs:
+      diagnostics:
+        description: Show startup debug logs inside the app
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 jobs:
   build:
+    name: Build Enigma unsigned IPA
     runs-on: macos-latest
     timeout-minutes: 60
-
     defaults:
       run:
         shell: bash
-
     steps:
       - name: Checkout source
         uses: actions/checkout@v7
@@ -41,36 +45,34 @@ jobs:
           flutter analyze --no-pub
           flutter test --no-pub
 
-      - name: Install CocoaPods
+      - name: Validate iOS configuration and install pods
         run: |
           set -euo pipefail
+          plutil -lint ios/Runner/Info.plist ios/Runner/Runner.entitlements ios/Flutter/AppFrameworkInfo.plist ios/Runner.xcodeproj/project.pbxproj
+          ruby -c ios/Podfile
           cd ios
           pod install --repo-update
 
-      - name: Build release for iPhone
+      - name: Build iOS release without signing
+        env:
+          ENIGMA_DIAGNOSTICS: ${{ inputs.diagnostics }}
         run: |
           set -euo pipefail
-          flutter build ios --release --no-codesign
+          mkdir -p build/diagnostics
+          flutter build ios --release --no-codesign --verbose \
+            --dart-define=ENIGMA_DIAGNOSTICS="$ENIGMA_DIAGNOSTICS" \
+            2>&1 | tee build/diagnostics/ios-build.log
 
-      - name: Package IPA
+      - name: Package and verify unsigned IPA
         run: |
           set -euo pipefail
           test -d build/ios/iphoneos/Runner.app
-
           staging_dir="$(mktemp -d "$RUNNER_TEMP/enigma-ipa.XXXXXX")"
-          mkdir -p "$staging_dir/Payload"
-          mkdir -p "$GITHUB_WORKSPACE/build/ios/ipa"
-
-          ditto build/ios/iphoneos/Runner.app \
-            "$staging_dir/Payload/Runner.app"
-
+          mkdir -p "$staging_dir/Payload" "$GITHUB_WORKSPACE/build/ios/ipa"
+          ditto build/ios/iphoneos/Runner.app "$staging_dir/Payload/Runner.app"
           cd "$staging_dir"
-          /usr/bin/zip -qry \
-            "$GITHUB_WORKSPACE/build/ios/ipa/Enigma-unsigned.ipa" \
-            Payload
-
-          /usr/bin/unzip -t \
-            "$GITHUB_WORKSPACE/build/ios/ipa/Enigma-unsigned.ipa"
+          /usr/bin/zip -qry "$GITHUB_WORKSPACE/build/ios/ipa/Enigma-unsigned.ipa" Payload
+          /usr/bin/unzip -t "$GITHUB_WORKSPACE/build/ios/ipa/Enigma-unsigned.ipa"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v7
@@ -80,3 +82,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
+
+      - name: Upload build debug logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Enigma-ios-build-logs
+          path: build/diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
