@@ -1,10 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// Explicit startup logs only: do not collect HTTP bodies or credentials.
+/// Bounded session logs: do not collect HTTP bodies or credentials.
 class RuntimeDiagnostics {
-  static const enabled = bool.fromEnvironment('ENIGMA_DIAGNOSTICS');
+  static const enabled =
+      bool.fromEnvironment('ENIGMA_DIAGNOSTICS', defaultValue: true);
   static final lines = ValueNotifier<List<String>>([]);
+
+  static void clear() => lines.value = [];
 
   static void log(String message) {
     if (!enabled) return;

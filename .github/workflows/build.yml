@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       diagnostics:
-        description: Enable startup diagnostic logging
+        description: Enable application logs
         type: boolean
         default: true
 

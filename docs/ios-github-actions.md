@@ -32,9 +32,12 @@ Không cần dùng `codemagic.yaml` khi chạy workflow này.
 
 ## Kiểm tra màn hình trắng
 
-Giữ bật **Enable startup diagnostic logging** khi chạy workflow để ghi log
-khởi động vào device console. IPA vẫn là bản release. Giao diện không còn nút
-Debug hoặc bảng log nổi.
+Giữ bật **Enable application logs** khi chạy workflow để ghi log
+khởi động vào device console và **Cài đặt → Thông tin ứng dụng → Nhật ký ứng dụng**.
+Trang nhật ký cập nhật trực tiếp, có tìm kiếm, sao chép các mục đang lọc và xóa
+nhật ký. Giữ tối đa 200 mục trong phiên hiện tại, mất khi tiến trình khởi động lại.
+Không ghi nội dung request/response, URL, token hay mật khẩu vào trang này.
+IPA vẫn là bản release; không có nút Debug nổi.
 
 `ENIGMA_DIAGNOSTICS=true` chỉ bật ghi log; `main.dart` gọi `AppBootstrap` để
 hiển thị giao diện trước khi chờ các dịch vụ. Workflow chạy kiểm thử
