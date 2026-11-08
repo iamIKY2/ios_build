@@ -40,10 +40,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (authState.isAuthenticated) {
       if (authState.user?.role == 'admin') {
-        // TODO: Điều hướng sang Admin Dashboard khi hoàn thiện màn hình Admin
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const StudentNav()),
-        );
+        // TODO: Navigate to Admin Dashboard
       } else {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const StudentNav()),

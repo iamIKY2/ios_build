@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'runtime_diagnostics.dart';
 
 /// Draw a frame before waiting for platform storage; recover from startup errors.
 class AppBootstrap extends StatefulWidget {
@@ -33,16 +34,23 @@ class _AppBootstrapState extends State<AppBootstrap> {
     if (!mounted) return;
     setState(() => _failed = false);
     try {
+      RuntimeDiagnostics.log('Required initialization: starting');
       await widget.initialize().timeout(widget.timeout);
     } catch (error, stack) {
+      RuntimeDiagnostics.error('Required initialization failed', error, stack);
       debugPrint('[Startup] Required initialization failed: $error\n$stack');
       if (mounted) setState(() => _failed = true);
       return;
     }
     if (!mounted) return;
     setState(() => _ready = true);
+    RuntimeDiagnostics.log('Required initialization: ready');
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) widget.onReady?.call();
+      if (mounted) {
+        RuntimeDiagnostics.log(
+            'App frame rendered; starting optional services');
+        widget.onReady?.call();
+      }
     });
   }
 
@@ -50,6 +58,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
   Widget build(BuildContext context) {
     if (_ready) return widget.builder(context);
     return MaterialApp(
+      builder: (_, child) => DiagnosticsOverlay(child: child!),
       debugShowCheckedModeBanner: false,
       home: Scaffold(
         body: SafeArea(

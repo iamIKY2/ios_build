@@ -65,6 +65,24 @@ class ChatScreenState extends State<ChatScreen> {
 
   void startTour({bool force = false}) => _startTour(force: force);
 
+  /// Prefills the chat input with [text] without auto-sending so the user
+  /// can review or edit the question before pressing send.
+  void askAbout(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return;
+    _controller.value = TextEditingValue(
+      text: trimmed,
+      selection: TextSelection.collapsed(offset: trimmed.length),
+    );
+    if (mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _focusNode.requestFocus();
+        }
+      });
+    }
+  }
+
   void _startTour({bool force = false}) {
     FeatureTour.start(
       context,

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/services/workplace_service.dart';
+import '../../core/utils/storage.dart';
 import '../../models/user.dart';
 import '../../state/app_state.dart';
 import '../../state/auth_state.dart';
@@ -20,15 +22,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AuthState>().refreshProfile();
+      _reloadProfileData();
     });
+  }
+
+  Future<void> _reloadProfileData() async {
+    await Future.wait([
+      context.read<AuthState>().refreshProfile(),
+      WorkplaceService.instance.fetchProfile(),
+    ]);
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   // ── Show Edit Profile Bottom Sheet ──────────────────────────────────────────
   void _showEditProfileSheet(BuildContext context, User user) {
     final nameCtrl = TextEditingController(text: user.name);
     final studentIdCtrl = TextEditingController(text: user.studentId ?? '');
-    final universityCtrl = TextEditingController(text: user.university ?? '');
+    final universityCtrl = TextEditingController(text: user.universityName ?? user.university ?? '');
+    final companyCtrl = TextEditingController(
+      text: user.companyName ?? WorkplaceService.instance.profile?.companyName ?? '',
+    );
     final majorCtrl = TextEditingController(text: user.major ?? '');
     final formKey = GlobalKey<FormState>();
 
@@ -127,6 +142,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   const SizedBox(height: 14),
 
+                  // Công ty thực tập
+                  TextFormField(
+                    controller: companyCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Công ty / Đơn vị thực tập',
+                      prefixIcon: const Icon(Icons.business_rounded),
+                      filled: true,
+                      fillColor: AppTheme.surfaceAltColor(context),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
                   // Ngành học
                   TextFormField(
                     controller: majorCtrl,
@@ -164,8 +192,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   name: nameCtrl.text,
                                   studentId: studentIdCtrl.text,
                                   university: universityCtrl.text,
+                                  company: companyCtrl.text,
                                   major: majorCtrl.text,
                                 );
+
+                            if (success) {
+                              await WorkplaceService.instance.fetchProfile();
+                              if (mounted) setState(() {});
+                            }
 
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -693,6 +727,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     final initialLetter = user.name.isNotEmpty ? user.name[0].toUpperCase() : 'U';
+    final cachedCompanyName = StorageUtil.getCachedUser()?.companyName;
+    final workplaceCompanyName = WorkplaceService.instance.profile?.companyName;
+    final String companyDisplayName = (user.companyName != null && user.companyName!.trim().isNotEmpty)
+        ? user.companyName!
+        : ((workplaceCompanyName != null && workplaceCompanyName.trim().isNotEmpty)
+            ? workplaceCompanyName
+            : ((cachedCompanyName != null && cachedCompanyName.trim().isNotEmpty)
+                ? cachedCompanyName
+                : 'Chưa cập nhật'));
+
+    final String universityDisplayName = (user.universityName != null && user.universityName!.trim().isNotEmpty)
+        ? user.universityName!
+        : ((user.university != null && user.university!.trim().isNotEmpty)
+            ? user.university!
+            : 'Chưa cập nhật');
 
     return Scaffold(
       appBar: AppBar(
@@ -826,7 +875,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     children: [
                       _buildBadge(
                         icon: Icons.work_outline_rounded,
-                        label: 'LG Display Hải Phòng',
+                        label: companyDisplayName,
                         color: AppTheme.primaryLight,
                       ),
                       _buildBadge(
@@ -887,7 +936,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               context,
               icon: Icons.school_outlined,
               label: 'Trường đào tạo',
-              value: (user.university != null && user.university!.isNotEmpty) ? user.university! : 'Chưa cập nhật',
+              value: universityDisplayName,
             ),
             _buildDetailTile(
               context,
@@ -899,7 +948,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               context,
               icon: Icons.business_outlined,
               label: 'Đơn vị thực tập',
-              value: 'LG Display Hải Phòng',
+              value: companyDisplayName,
             ),
 
             const SizedBox(height: 24),

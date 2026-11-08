@@ -67,7 +67,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyBSBj4Xqz5YnvWxAqXVmVLqZAdnVCeVqgI',
-    appId: '1:36729513984:android:826c356fca005577b8d0e5',
+    appId: '1:36729513984:android:6cb8056efebf76b9b8d0e5',
     messagingSenderId: '36729513984',
     projectId: 'enigma-mentality',
     storageBucket: 'enigma-mentality.firebasestorage.app',

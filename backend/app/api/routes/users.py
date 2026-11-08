@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, func, and_, or_
+from sqlalchemy.exc import IntegrityError
 from typing import Optional
 
 from app.db.database import get_db
@@ -39,6 +40,12 @@ async def build_user_profile_response(db: AsyncSession, user: User) -> UserRespo
 
     uni_pending = bool(uni and not uni.is_approved)
     comp_pending = bool(comp and not comp.is_approved)
+    resolved_company_name = (
+        comp.name if comp else (prof.company_name if prof and prof.company_name else None)
+    )
+    resolved_university_name = (
+        uni.name if uni else (u.university if u.university else None)
+    )
 
     return UserResponse(
         id=u.id,
@@ -47,11 +54,11 @@ async def build_user_profile_response(db: AsyncSession, user: User) -> UserRespo
         role=u.role.value if hasattr(u.role, 'value') else str(u.role),
         student_id=u.student_id,
         university_id=u.university_id,
-        university=u.university,
-        university_name=uni.name if uni else None,
+        university=resolved_university_name,
+        university_name=resolved_university_name,
         university_is_pending=uni_pending,
         company_id=prof.company_id if prof else None,
-        company_name=comp.name if comp else None,
+        company_name=resolved_company_name,
         company_is_pending=comp_pending,
         is_pending=bool(uni_pending or comp_pending),
         major=u.major,
@@ -94,6 +101,7 @@ async def apply_profile_catalog_updates(
                 detail="university_id không tồn tại hoặc chưa được phê duyệt.",
             )
         user.university_id = uni.id
+        user.university = uni.name
         target_uni = uni
 
     # Handle other_university_name
@@ -167,6 +175,7 @@ async def apply_profile_catalog_updates(
             await db.flush()
 
         user.university_id = matched_uni.id
+        user.university = matched_uni.name
         target_uni = matched_uni
 
     # Handle company_id
@@ -184,6 +193,15 @@ async def apply_profile_catalog_updates(
             prof = InternProfile(user_id=user.id)
             db.add(prof)
         prof.company_id = comp.id
+        prof.company_name = comp.name
+        if comp.latitude is not None:
+            prof.company_lat = comp.latitude
+        if comp.longitude is not None:
+            prof.company_lng = comp.longitude
+        if comp.radius_meters is not None:
+            prof.company_radius = comp.radius_meters
+        if comp.workplace_type:
+            prof.workplace_type = comp.workplace_type
         target_comp = comp
 
     # Handle other_company_name
@@ -264,6 +282,7 @@ async def apply_profile_catalog_updates(
             prof = InternProfile(user_id=user.id)
             db.add(prof)
         prof.company_id = matched_comp.id
+        prof.company_name = matched_comp.name
         target_comp = matched_comp
 
     # Fetch rows if not modified in this request
@@ -349,7 +368,17 @@ async def update_my_profile(
     if payload.full_name is not None and payload.full_name.strip():
         user.full_name = payload.full_name.strip()
     if payload.student_id is not None:
-        user.student_id = payload.student_id.strip() if payload.student_id.strip() else None
+        clean_sid = payload.student_id.strip() if payload.student_id.strip() else None
+        if clean_sid and clean_sid != user.student_id:
+            existing_sid_res = await db.execute(
+                select(User.id).where(User.student_id == clean_sid, User.id != user.id)
+            )
+            if existing_sid_res.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Mã số sinh viên '{clean_sid}' đã được sử dụng bởi một tài khoản khác. Vui lòng kiểm tra lại.",
+                )
+        user.student_id = clean_sid
 
     # Handle catalog profile updates if provided
     has_catalog_updates = any([
@@ -368,36 +397,91 @@ async def update_my_profile(
             other_company_name=payload.other_company_name,
             db=db,
         )
-    elif payload.university is not None:
-        clean_uni_str = payload.university.strip()
-        if clean_uni_str:
-            norm_target = normalize_vietnamese_text(clean_uni_str)
-            all_unis_res = await db.execute(select(University).where(University.is_approved == True))
-            matched = None
-            for u in all_unis_res.scalars().all():
-                if normalize_vietnamese_text(u.name) == norm_target or (
-                    u.short_name and normalize_vietnamese_text(u.short_name) == norm_target
-                ):
-                    matched = u
-                    break
-            if matched:
-                user.university_id = matched.id
-                user.university = matched.name
+    else:
+        if payload.university is not None:
+            clean_uni_str = payload.university.strip()
+            if clean_uni_str:
+                norm_target = normalize_vietnamese_text(clean_uni_str)
+                all_unis_res = await db.execute(select(University).where(University.is_approved == True))
+                matched = None
+                for u in all_unis_res.scalars().all():
+                    if normalize_vietnamese_text(u.name) == norm_target or (
+                        u.short_name and normalize_vietnamese_text(u.short_name) == norm_target
+                    ):
+                        matched = u
+                        break
+                if matched:
+                    user.university_id = matched.id
+                    user.university = matched.name
+                else:
+                    user.university = clean_uni_str
             else:
-                user.university = clean_uni_str
-        else:
-            user.university = None
-            user.university_id = None
+                user.university = None
+                user.university_id = None
+
+        clean_company = payload.company_name or payload.company
+        if clean_company is not None:
+            clean_comp_str = clean_company.strip()
+            prof_res = await db.execute(select(InternProfile).where(InternProfile.user_id == user.id))
+            prof = prof_res.scalar_one_or_none()
+            if not prof:
+                prof = InternProfile(user_id=user.id)
+                db.add(prof)
+
+            if clean_comp_str:
+                norm_comp_target = normalize_vietnamese_text(clean_comp_str)
+                all_comps_res = await db.execute(select(Company).where(Company.is_approved == True))
+                matched_c = None
+                for c in all_comps_res.scalars().all():
+                    if normalize_vietnamese_text(c.name) == norm_comp_target or (
+                        c.short_name and normalize_vietnamese_text(c.short_name) == norm_comp_target
+                    ):
+                        matched_c = c
+                        break
+                if matched_c:
+                    prof.company_id = matched_c.id
+                    prof.company_name = matched_c.name
+                    if matched_c.latitude is not None:
+                        prof.company_lat = matched_c.latitude
+                    if matched_c.longitude is not None:
+                        prof.company_lng = matched_c.longitude
+                    if matched_c.radius_meters is not None:
+                        prof.company_radius = matched_c.radius_meters
+                    if matched_c.workplace_type:
+                        prof.workplace_type = matched_c.workplace_type
+                else:
+                    prof.company_name = clean_comp_str
+            else:
+                prof.company_name = None
+                prof.company_id = None
 
     if payload.major is not None:
         user.major = payload.major.strip() if payload.major.strip() else None
     if payload.avatar_url is not None:
         user.avatar_url = payload.avatar_url
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        err_str = str(e.orig) if hasattr(e, "orig") else str(e)
+        if "users_student_id_key" in err_str or "student_id" in err_str:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Mã số sinh viên này đã được sử dụng bởi một tài khoản khác. Vui lòng kiểm tra lại.",
+            )
+        if "users_email_key" in err_str or "email" in err_str:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email này đã được sử dụng.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Thông tin cập nhật bị trùng lặp với dữ liệu đã tồn tại trong hệ thống.",
+        )
+
     await db.refresh(user)
     return await build_user_profile_response(db, user)
-
 
 
 @router.post("/change-password", summary="Đổi mật khẩu tài khoản")

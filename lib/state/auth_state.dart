@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
-import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../models/user.dart';
 import '../core/utils/storage.dart';
@@ -305,18 +303,6 @@ class AuthState extends ChangeNotifier {
         return true;
       }
 
-      // The native Google SDK raises an exception when its iOS client or
-      // callback scheme is missing. Check before entering the SDK.
-      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
-        final configured = await const MethodChannel('enigma/ios_configuration')
-            .invokeMethod<bool>('isGoogleSignInConfigured');
-        if (configured != true) {
-          _error = 'Đăng nhập Google chưa được cấu hình trên iOS. '
-              'Vui lòng đăng nhập bằng email hoặc tiếp tục với tư cách khách.';
-          return false;
-        }
-      }
-
       // Đăng xuất phiên cũ nếu có để cho phép user chọn tài khoản
       try {
         await _googleSignIn.signOut();
@@ -350,18 +336,6 @@ class AuthState extends ChangeNotifier {
       SyncService.instance.syncPendingData();
       PushNotificationService.syncTokenWithBackend();
       return true;
-    } on PlatformException catch (e, stack) {
-      debugPrint('Google Sign-In platform exception: $e\n$stack');
-      if (!kIsWeb &&
-          defaultTargetPlatform == TargetPlatform.android &&
-          RegExp(r'ApiException:\s*10(?:\D|$)').hasMatch(e.message ?? '')) {
-        _error = 'Đăng nhập Google chưa được cấu hình đúng cho bản Android này '
-            '(mã 10). Cần đăng ký SHA-1 của chứng chỉ ký APK và package name '
-            'trong Firebase/Google Cloud. Bạn có thể đăng nhập bằng email.';
-      } else {
-        _error = 'Đăng nhập Google thất bại: ${e.message ?? e.code}';
-      }
-      return false;
     } on DioException catch (e) {
       if (e.response?.data is Map && e.response?.data['detail'] != null) {
         final detail = e.response?.data['detail'];
@@ -540,9 +514,30 @@ class AuthState extends ChangeNotifier {
       if (!AppConstants.useMockApi) {
         final response = await ApiClient.instance.get('/users/me');
         _user = User.fromJson(response.data);
+        await StorageUtil.saveCachedUser(_user!);
         notifyListeners();
       }
-    } catch (_) {}
+    } catch (_) {
+      final cached = StorageUtil.getCachedUser();
+      if (cached != null) {
+        _user = cached;
+        notifyListeners();
+      }
+    }
+  }
+
+  /// Đồng bộ công ty vừa cập nhật từ WorkplaceService sang AuthState & StorageUtil
+  Future<void> syncWorkplaceCompany({
+    String? companyId,
+    required String companyName,
+  }) async {
+    if (_user == null) return;
+    _user = _user!.copyWith(
+      companyId: companyId,
+      companyName: companyName,
+    );
+    await StorageUtil.saveCachedUser(_user!);
+    notifyListeners();
   }
 
   // ── Update Profile ───────────────────────────────────────────────────────
@@ -550,6 +545,7 @@ class AuthState extends ChangeNotifier {
     required String name,
     String? studentId,
     String? university,
+    String? company,
     String? major,
     String? avatarUrl,
   }) async {
@@ -564,6 +560,8 @@ class AuthState extends ChangeNotifier {
           name: name,
           studentId: studentId,
           university: university,
+          universityName: university,
+          companyName: company,
           major: major,
           avatarUrl: avatarUrl ?? _user?.avatarUrl,
         );
@@ -576,6 +574,8 @@ class AuthState extends ChangeNotifier {
         'full_name': name.trim(),
         'student_id': studentId?.trim(),
         'university': university?.trim(),
+        'company': company?.trim(),
+        'company_name': company?.trim(),
         'major': major?.trim(),
       };
       if (avatarUrl != null) {
@@ -588,6 +588,8 @@ class AuthState extends ChangeNotifier {
           name: name,
           studentId: studentId,
           university: university,
+          universityName: university,
+          companyName: company,
           major: major,
           avatarUrl: avatarUrl ?? _user?.avatarUrl,
         );
@@ -658,4 +660,3 @@ class AuthState extends ChangeNotifier {
     }
   }
 }
-
