@@ -44,6 +44,8 @@ jobs:
           set -euo pipefail
           flutter analyze --no-pub
           flutter test --no-pub
+          flutter test --no-pub --dart-define=ENIGMA_DIAGNOSTICS=true \
+            test/startup_entrypoint_test.dart test/runtime_diagnostics_test.dart
 
       - name: Validate iOS configuration and install pods
         run: |
@@ -56,11 +58,19 @@ jobs:
       - name: Build iOS release without signing
         env:
           ENIGMA_DIAGNOSTICS: ${{ inputs.diagnostics }}
+          ENIGMA_BUILD_SHA: ${{ github.sha }}
+          ENIGMA_BUILD_RUN: ${{ github.run_number }}
         run: |
           set -euo pipefail
           mkdir -p build/diagnostics
+          printf 'commit=%s\nrun=%s\ndiagnostics=%s\n' \
+            "$ENIGMA_BUILD_SHA" "$ENIGMA_BUILD_RUN" "$ENIGMA_DIAGNOSTICS" \
+            | tee build/diagnostics/build-info.txt
           flutter build ios --release --no-codesign --verbose \
+            --build-number="$ENIGMA_BUILD_RUN" \
             --dart-define=ENIGMA_DIAGNOSTICS="$ENIGMA_DIAGNOSTICS" \
+            --dart-define=ENIGMA_BUILD_SHA="$ENIGMA_BUILD_SHA" \
+            --dart-define=ENIGMA_BUILD_RUN="$ENIGMA_BUILD_RUN" \
             2>&1 | tee build/diagnostics/ios-build.log
 
       - name: Package and verify unsigned IPA

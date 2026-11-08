@@ -6,6 +6,7 @@ import 'state/app_state.dart';
 import 'state/theme_state.dart';
 import 'state/notification_state.dart';
 import 'core/services/sync_service.dart';
+import 'core/startup/runtime_diagnostics.dart';
 import 'screens/auth/splash_screen.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/student/notifications_screen.dart';
@@ -30,6 +31,7 @@ class EnigmaApp extends StatelessWidget {
       child: Consumer<ThemeState>(
         builder: (context, themeState, child) {
           return MaterialApp(
+            builder: (_, child) => DiagnosticsOverlay(child: child!),
             title: 'Enigma - Phục hồi Sức khỏe Tâm lý',
             debugShowCheckedModeBanner: false,
             theme: AppTheme.lightTheme,
