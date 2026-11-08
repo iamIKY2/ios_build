@@ -32,21 +32,20 @@ Không cần dùng `codemagic.yaml` khi chạy workflow này.
 
 ## Kiểm tra màn hình trắng
 
-Giữ bật **Show startup debug logs inside the app** khi chạy workflow. IPA vẫn
-là bản release. Nút **Debug** có trên màn hình khởi động và trong app; bấm nút
-sao chép để lấy log của phiên chạy hiện tại.
+Giữ bật **Enable startup diagnostic logging** khi chạy workflow để ghi log
+khởi động vào device console. IPA vẫn là bản release. Giao diện không còn nút
+Debug hoặc bảng log nổi.
 
-`ENIGMA_DIAGNOSTICS=true` chỉ bật ghi log; `main.dart` phải gọi `AppBootstrap`
-và `app.dart` phải gắn `DiagnosticsOverlay`. Nếu hai kết nối này bị mất, file
-debug vẫn tồn tại nhưng không thể hiển thị khi mở app. Workflow chạy kiểm thử
+`ENIGMA_DIAGNOSTICS=true` chỉ bật ghi log; `main.dart` gọi `AppBootstrap` để
+hiển thị giao diện trước khi chờ các dịch vụ. Workflow chạy kiểm thử
 entry point thật ở cả cấu hình thông thường và cấu hình bật chẩn đoán.
 
 Artifact **Enigma-ios-build-logs** chứa `ios-build.log` và `build-info.txt` (commit,
 số lần build, trạng thái diagnostics). Số lần build cũng được dùng làm build
-number và ghi trong bảng Debug, để xác định bản IPA đang thử.
+number và ghi trong log khởi động, để xác định bản IPA đang thử.
 
 Log build thành công không cho biết lỗi lúc mở trên iPhone. Nếu bản đã nối
-bootstrap vẫn trắng hoàn toàn, không có chữ Enigma/nút Debug, cần device console
+bootstrap vẫn trắng hoàn toàn, không có chữ Enigma, cần device console
 hoặc crash log lúc mở app để kiểm tra native launch/engine/chữ ký. Không thể kết
 luận nguyên nhân đó chỉ từ `ios-build.log`.
 

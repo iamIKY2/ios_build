@@ -37,8 +37,7 @@ void main() {
 
     expect(find.byType(AppBootstrap), findsOneWidget);
     expect(find.text('Đang khởi động…'), findsOneWidget);
-    expect(find.text('Debug'),
-        RuntimeDiagnostics.enabled ? findsOneWidget : findsNothing);
+    expect(find.text('Debug'), findsNothing);
     if (RuntimeDiagnostics.enabled) {
       expect(RuntimeDiagnostics.lines.value.join('\n'),
           contains('Dart main entered'));
@@ -50,7 +49,7 @@ void main() {
     await tester.pump();
   });
 
-  testWidgets('main app keeps the diagnostics overlay after startup',
+  testWidgets('main app renders without a floating debug button',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     await StorageUtil.init();
@@ -58,9 +57,7 @@ void main() {
       home: Scaffold(body: Text('App ready')),
     ));
     expect(find.text('App ready'), findsOneWidget);
-    expect(find.byType(DiagnosticsOverlay), findsOneWidget);
-    expect(find.text('Debug'),
-        RuntimeDiagnostics.enabled ? findsOneWidget : findsNothing);
+    expect(find.text('Debug'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }

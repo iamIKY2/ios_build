@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       diagnostics:
-        description: Show startup debug logs inside the app
+        description: Enable startup diagnostic logging
         type: boolean
         default: true
 

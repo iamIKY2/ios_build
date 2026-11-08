@@ -58,7 +58,6 @@ class _AppBootstrapState extends State<AppBootstrap> {
   Widget build(BuildContext context) {
     if (_ready) return widget.builder(context);
     return MaterialApp(
-      builder: (_, child) => DiagnosticsOverlay(child: child!),
       debugShowCheckedModeBanner: false,
       home: Scaffold(
         body: SafeArea(
