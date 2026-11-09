@@ -83,15 +83,15 @@ jobs:
           cd "$staging_dir"
           /usr/bin/zip -qry "$GITHUB_WORKSPACE/build/ios/ipa/Enigma-unsigned.ipa" Payload
           /usr/bin/unzip -t "$GITHUB_WORKSPACE/build/ios/ipa/Enigma-unsigned.ipa"
+          python3 "$GITHUB_WORKSPACE/scripts/verify_ipa.py" "$GITHUB_WORKSPACE/build/ios/ipa/Enigma-unsigned.ipa"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v7
         with:
-          name: Enigma-unsigned-ipa
           path: build/ios/ipa/Enigma-unsigned.ipa
+          archive: false
           if-no-files-found: error
           retention-days: 7
-          compression-level: 0
 
       - name: Upload build debug logs
         if: always()
