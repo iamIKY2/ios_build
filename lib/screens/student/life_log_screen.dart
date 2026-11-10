@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../theme/app_theme.dart';
 import '../../core/api/life_log_repository.dart';
 import '../../core/utils/sleep_time_utils.dart';
+import '../../core/utils/life_log_symptoms.dart';
 import '../../core/utils/sleep_detector.dart';
 import '../../core/services/sleep_sensor_service.dart';
 import '../../core/services/workplace_service.dart';
@@ -84,17 +85,6 @@ class _LifeLogScreenState extends State<LifeLogScreen>
   // Pre-loaded history
   List<Map<String, dynamic>> _history = [];
   bool _historyLoading = true;
-
-  static const _symptoms = [
-    {'icon': '🦴', 'label': 'Đau vai gáy'},
-    {'icon': '🔩', 'label': 'Đau lưng'},
-    {'icon': '😵', 'label': 'Đau đầu'},
-    {'icon': '👁️', 'label': 'Mỏi mắt'},
-    {'icon': '🦶', 'label': 'Đau chân'},
-    {'icon': '🌡️', 'label': 'Chóng mặt'},
-    {'icon': '🤢', 'label': 'Buồn nôn'},
-    {'icon': '💤', 'label': 'Ngủ gật'},
-  ];
 
   static const _stressLabels = ['', 'Bình thản 😌', 'Nhẹ nhàng 🙂', 'Trung bình 😐', 'Căng thẳng 😟', 'Rất căng 😰'];
   static const _stressColors = [
@@ -292,12 +282,15 @@ class _LifeLogScreenState extends State<LifeLogScreen>
     setState(() { _isLoading = true; });
 
     try {
+      final bodyState = lifeLogBodyStatePayload(
+        _stressLevel, _selectedSymptoms, _noteController.text,
+      );
       final result = await LifeLogRepository.createLifeLog(
         stressLevel: _stressLevel,
         sleepHours: _sleepHours,
         shiftType: _shiftType,
-        physicalSymptoms: _selectedSymptoms,
-        moodNote: _noteController.text.trim().isEmpty ? null : _noteController.text.trim(),
+        physicalSymptoms: bodyState.symptoms,
+        moodNote: bodyState.note,
         waterIntakeMl: _waterIntakeMl,
       );
 
@@ -311,6 +304,8 @@ class _LifeLogScreenState extends State<LifeLogScreen>
             'sleep_hours': _sleepHours,
             'shift_type': _shiftType,
             'stress_level': _stressLevel,
+            'physical_symptoms': bodyState.symptoms,
+            'mood_note': bodyState.note,
             'wellbeing_score': result['wellbeing_score'] ?? 80,
           };
           _hasUserEditedTimes = false;
@@ -411,7 +406,12 @@ class _LifeLogScreenState extends State<LifeLogScreen>
 
           const SizedBox(height: 24),
 
-          _buildSectionHeader('🦴 Triệu chứng thể chất', '${_selectedSymptoms.length} đã chọn'),
+          _buildSectionHeader('🌿 Trạng thái thể chất', '${_selectedSymptoms.length} đã chọn'),
+          const SizedBox(height: 4),
+          Text(
+            'Gợi ý theo mức căng thẳng $_stressLevel/5. Chọn trạng thái đúng với bạn.',
+            style: TextStyle(fontSize: 12, color: AppTheme.onSurfaceMuted(context)),
+          ),
           const SizedBox(height: 12),
           _buildSymptomsGrid(),
 
@@ -509,7 +509,12 @@ class _LifeLogScreenState extends State<LifeLogScreen>
         final color = _stressColors[level];
         return Expanded(
           child: GestureDetector(
-            onTap: () => setState(() => _stressLevel = level),
+            onTap: () => setState(() {
+              _stressLevel = level;
+              final available = lifeLogSymptomsForStressLevel(level)
+                  .map((state) => state.label).toSet();
+              _selectedSymptoms.removeWhere((label) => !available.contains(label));
+            }),
             child: AnimatedContainer(
               duration: 200.ms,
               margin: EdgeInsets.only(right: i < 4 ? 8 : 0),
@@ -1197,14 +1202,16 @@ class _LifeLogScreenState extends State<LifeLogScreen>
   }
 
   Widget _buildSymptomsGrid() {
+    final selectedColor = _stressColors[_stressLevel];
     return Wrap(
       spacing: 8,
       runSpacing: 8,
-      children: _symptoms.map((s) {
-        final label = s['label']!;
-        final emoji = s['icon']!;
+      children: lifeLogSymptomsForStressLevel(_stressLevel).map((s) {
+        final label = s.label;
+        final emoji = s.icon;
         final isSelected = _selectedSymptoms.contains(label);
         return GestureDetector(
+          key: ValueKey(label),
           onTap: () => setState(() {
             isSelected ? _selectedSymptoms.remove(label) : _selectedSymptoms.add(label);
           }),
@@ -1212,16 +1219,16 @@ class _LifeLogScreenState extends State<LifeLogScreen>
             duration: 150.ms,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: isSelected ? AppTheme.accentCoral.withOpacity(0.15) : AppTheme.surfaceColor(context),
+              color: isSelected ? selectedColor.withOpacity(0.15) : AppTheme.surfaceColor(context),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: isSelected ? AppTheme.accentCoral : AppTheme.borderColor(context)),
+              border: Border.all(color: isSelected ? selectedColor : AppTheme.borderColor(context)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(emoji, style: const TextStyle(fontSize: 14)),
                 const SizedBox(width: 6),
-                Text(label, style: TextStyle(fontSize: 12, color: isSelected ? AppTheme.accentCoral : AppTheme.onSurfaceSecondary(context), fontWeight: FontWeight.w500)),
+                Text(label, style: TextStyle(fontSize: 12, color: isSelected ? selectedColor : AppTheme.onSurfaceSecondary(context), fontWeight: FontWeight.w500)),
               ],
             ),
           ),
@@ -1482,6 +1489,12 @@ class _LifeLogScreenState extends State<LifeLogScreen>
             ],
           ),
 
+          if ((data['mood_note'] ?? data['note'])?.toString().trim().isNotEmpty == true) ...[
+            const SizedBox(height: 12),
+            Text((data['mood_note'] ?? data['note']).toString(),
+              style: TextStyle(fontSize: 12, color: AppTheme.onSurfaceSecondary(context))),
+          ],
+
           // AI Risk Assessment & actions (when available from save result or cache)
           if (riskAssessment != null && (riskActions.isNotEmpty || riskAssessment.isNotEmpty)) ...[
             const SizedBox(height: 16),
@@ -1641,6 +1654,12 @@ class _LifeLogScreenState extends State<LifeLogScreen>
               padding: const EdgeInsets.only(top: 4),
               child: Text('Triệu chứng: ${(entry['physical_symptoms'] as List).join(", ")}',
                 style: TextStyle(fontSize: 11, color: AppTheme.onSurfaceMuted(context)), maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+          if ((entry['note'] ?? entry['mood_note'])?.toString().trim().isNotEmpty == true)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text((entry['note'] ?? entry['mood_note']).toString(),
+                style: TextStyle(fontSize: 11, color: AppTheme.onSurfaceMuted(context))),
             ),
         ])),
         Container(

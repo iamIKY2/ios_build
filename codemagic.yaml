@@ -40,6 +40,5 @@ workflows:
           cd "$staging_dir"
           /usr/bin/zip -qry "$CM_BUILD_DIR/build/ios/ipa/Enigma-unsigned.ipa" Payload
           /usr/bin/unzip -t "$CM_BUILD_DIR/build/ios/ipa/Enigma-unsigned.ipa"
-          python3 "$CM_BUILD_DIR/scripts/verify_ipa.py" "$CM_BUILD_DIR/build/ios/ipa/Enigma-unsigned.ipa"
     artifacts:
       - build/ios/ipa/Enigma-unsigned.ipa

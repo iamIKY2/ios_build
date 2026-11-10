@@ -4,30 +4,25 @@ Workflow: `.github/workflows/build.yml`.
 
 ## Chạy build
 
-1. Đưa mã nguồn dự án và workflow lên kho GitHub, gồm `pubspec.lock`, assets
-   và thư mục `ios/`. Workflow cần có trên nhánh mặc định để xuất hiện nút chạy.
+1. Đưa mã nguồn dự án và workflow lên kho GitHub, gồm `pubspec.lock`, assets,
+   thư mục `ios/`, `scripts/verify_ipa.py` và các file Dart/test mới.
+   Workflow cần có trên nhánh mặc định để xuất hiện nút chạy.
 2. Mở kho trên GitHub → **Actions** → **Build iOS Unsigned IPA**.
 3. Chọn **Run workflow**, chọn nhánh cần build, rồi xác nhận chạy.
 4. Mở lần chạy vừa tạo, chờ job **Build Enigma unsigned IPA** thành công.
 5. Tại **Artifacts**, tải **Enigma-unsigned.ipa**. Workflow dùng `archive: false`
    để tải trực tiếp IPA, không bọc thêm ZIP.
 
-## Lỗi không tìm thấy Payload khi cài
-
-Với các lần build cũ, artifact **Enigma-unsigned-ipa.zip** chứa file
-**Enigma-unsigned.ipa** bên trong. Cần giải nén ZIP một lần rồi chọn file IPA
-đó trong công cụ ký/cài. Không đổi đuôi ZIP tải từ GitHub thành `.ipa`.
-
-IPA đúng có `Payload/Runner.app/Info.plist` và file thực thi bên trong;
-không có thư mục trung gian phía trước `Payload`. Có thể kiểm tra trên Windows:
+Nếu tải artifact từ lần build cũ dưới dạng ZIP chứa IPA, giải nén ZIP để lấy
+file `.ipa` bên trong; không đổi đuôi ZIP thành `.ipa`. Có thể kiểm tra file
+đã tải trên Windows:
 
 ```powershell
 python scripts/verify_ipa.py "C:\Downloads\Enigma-unsigned.ipa"
 ```
 
-Nếu thông báo file ZIP chứa IPA, hãy giải nén để lấy IPA bên trong. Nếu thiếu
-`Payload/*.app/Info.plist`, tải lại đúng artifact hoặc build lại bằng workflow
-mới. Kiểm tra này xác nhận cấu trúc và tính toàn vẹn ZIP, không xác nhận chữ ký.
+Script kiểm tra `Payload/*.app/Info.plist`, file thực thi và tính toàn vẹn ZIP;
+không xác nhận chữ ký ứng dụng.
 
 Không cần cấu hình GitHub Secrets, chứng chỉ ký hoặc Apple Developer cho
 workflow này. Workflow chỉ chạy thủ công, không tự chạy khi push hay mở PR.

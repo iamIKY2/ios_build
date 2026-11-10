@@ -567,8 +567,9 @@ class ChatScreenState extends State<ChatScreen> {
                                             ),
                                           );
                                           if (s.id == _sessionId) {
-                                            if (historyCtx.mounted)
+                                            if (historyCtx.mounted) {
                                               Navigator.pop(historyCtx);
+                                            }
                                             _resetSession();
                                           }
                                         }

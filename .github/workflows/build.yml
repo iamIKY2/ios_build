@@ -35,6 +35,7 @@ jobs:
       - name: Install dependencies
         run: |
           set -euo pipefail
+          test -f scripts/verify_ipa.py
           flutter --version
           xcodebuild -version
           flutter pub get
